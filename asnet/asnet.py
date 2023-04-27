@@ -2,8 +2,7 @@ from typing import List, Set
 
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Input, Lambda, Dense, concatenate, Add
+from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate
 from tensorflow.keras.models import Model
 
 
@@ -65,8 +64,7 @@ def build_prepositions_layer(prev_layer, prepositions, relations, layer_num):
             get_actions_from_layer(prev_layer, related_actions_indexes)
         ) # Only connects the preposition neuron to related actions
         prepositions_layer.append(prep_neuron)
-    prep_layer = Dense(len(prepositions), activation='relu', name=f"Prep{layer_num}")(concatenate(prepositions_layer))
-    #prep_layer = Add(name=f"Prep{layer_num}")(prepositions_layer)
+    prep_layer = Concatenate(name=f"Prep{layer_num}")(prepositions_layer)
     return prep_layer
 
 
@@ -81,8 +79,7 @@ def build_actions_layer(prev_layer, actions, relations, prepositions, layer_num)
             get_actions_from_layer(prev_layer, related_prep_indexes)
         ) # Only connects the preposition neuron to related actions
         actions_layer.append(act_neuron)
-    act_layer = Dense(len(actions), activation='relu', name=f"Acts{layer_num}")(concatenate(actions_layer))
-    #act_layer = Add(name=f"Acts{layer_num}")(actions_layer)
+    act_layer = Concatenate(name=f"Acts{layer_num}")(actions_layer)
     return act_layer
 
 
@@ -90,7 +87,7 @@ def create_asnet(actions: set, prepositions: set, relations: set):
     actions = list(actions)
     prepositions = list(prepositions)
 
-    inputs = keras.Input(shape=(len(actions),), name="A1")
+    inputs = Input(shape=(len(actions),), name="A1")
 
     prep1 = build_prepositions_layer(inputs, prepositions, relations, 1)
 
