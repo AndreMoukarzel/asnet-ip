@@ -20,29 +20,13 @@ relations = [
 ]
 
 
-def get_related_action_indexes(preposition: str, relations: List[Set[str]]) -> List[int]:
-    """Returns a list of action indexes of all actions to which the preposition
-    is related to.
-
-    A preposition is related to an action if it is either a precondition or an
-    effect of such action.
-    """
-    related_actions: List[int] = []
-    for action_index, rel_preps in enumerate(relations):
-        if preposition in rel_preps:
-            related_actions.append(action_index)
-    return related_actions
-
-
-def get_related_preposition_indexes(related_prepositions: Set[str], prepositions: List[str]) -> List[int]:
-    """Returns a list of preposition indexes of all prepositions to which the
-    action is related to.
-    """
-    related_prep_indexes: List[int] = []
-    for prep in related_prepositions:
-        prep_index = prepositions.index(prep)
-        related_prep_indexes.append(prep_index)
-    return related_prep_indexes
+def values_to_index(uninedexed_dict: dict, indexing_list: list):
+    indexed_dict = {}
+    for key, values in uninedexed_dict.items():
+        indexed_values = [indexing_list.index(val) for val in values]
+        indexed_values.sort()
+        indexed_dict[key] = indexed_values
+    return indexed_dict
 
 
 def get_actions_from_layer(layer, action_indexes: List[int]) -> Lambda:
@@ -54,12 +38,12 @@ def get_actions_from_layer(layer, action_indexes: List[int]) -> Lambda:
     return Lambda(lambda x: tf.gather(x, action_indexes, axis=1))(layer)
 
 
-def build_prepositions_layer(prev_layer, prepositions, relations, layer_num):
+def build_prepositions_layer(prev_layer, prepositions, act_indexed_relations, layer_num):
     """Builds a preposition layer.
     """
     prepositions_layer = []
     for prep in prepositions:
-        related_actions_indexes = get_related_action_indexes(prep, relations)
+        related_actions_indexes = act_indexed_relations[pred]
         prep_neuron = Dense(1, name=f"{prep}{layer_num}")(
             get_actions_from_layer(prev_layer, related_actions_indexes)
         ) # Only connects the preposition neuron to related actions
@@ -68,13 +52,12 @@ def build_prepositions_layer(prev_layer, prepositions, relations, layer_num):
     return prep_layer
 
 
-def build_actions_layer(prev_layer, actions, relations, prepositions, layer_num):
+def build_actions_layer(prev_layer, actions, pred_indexed_relations, layer_num):
     """Builds an action layer.
     """
     actions_layer = []
     for act in actions:
-        action_index: int = actions.index(act)
-        related_prep_indexes = get_related_preposition_indexes(relations[action_index], prepositions)
+        related_prep_indexes = pred_indexed_relations[act]
         act_neuron = Dense(1, name=f"{act}{layer_num}")(
             get_actions_from_layer(prev_layer, related_prep_indexes)
         ) # Only connects the preposition neuron to related actions
@@ -83,24 +66,26 @@ def build_actions_layer(prev_layer, actions, relations, prepositions, layer_num)
     return act_layer
 
 
-def create_asnet(actions: set, prepositions: set, relations: set):
+def create_asnet(actions: set, prepositions: set, action_relations: dict, predicate_relations: dict):
     actions = list(actions)
     prepositions = list(prepositions)
+    act_indexed_relations = values_to_index(predicate_relations, actions)
+    pred_indexed_relations = values_to_index(action_relations, prepositions)
+    print(act_indexed_relations)
 
     inputs = Input(shape=(len(actions),), name="A1")
 
-    prep1 = build_prepositions_layer(inputs, prepositions, relations, 1)
+    prep1 = build_prepositions_layer(inputs, prepositions, act_indexed_relations, 1)
 
-    act1 = build_actions_layer(prep1, actions, relations, prepositions, 1)
+    act1 = build_actions_layer(prep1, actions, pred_indexed_relations, 1)
 
-    prep2 = build_prepositions_layer(act1, prepositions, relations, 2)
+    prep2 = build_prepositions_layer(act1, prepositions, act_indexed_relations, 2)
 
-    act2 = build_actions_layer(prep2, actions, relations, prepositions, 2)
+    act2 = build_actions_layer(prep2, actions, pred_indexed_relations, 2)
 
     #out = Dense(len(prepositions))(prep1)
 
     return keras.Model(inputs, act2)
-
 
 model = create_asnet(actions, prepositions, relations)
 

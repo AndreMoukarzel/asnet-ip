@@ -71,3 +71,11 @@ def get_action_relations(tokens, action: str, predicates: Set[str]):
             relations.append(token)
     
     return set(relations)
+
+
+def get_predicate_relations(predicate: str, action_relations: dict):
+    relations = []
+    for key, values in action_relations.items():
+        if predicate in values:
+            relations.append(key)
+    return set(relations)
