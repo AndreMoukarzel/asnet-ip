@@ -9,14 +9,6 @@ from tensorflow.keras.models import Model
 
 
 
-# É mais fácil pegarmos as relações pelas ações já grounded
-# Assim também temos a vantagem de não incluir proposições impossíveis.
-# 
-# Para isso, basta considerarmos as proposições com as variáveis na hora de
-# puxar as relações das ações, e adicionar também os argumentos das ações aos
-# seus indicadores
-
-
 class ASNet:
 
 
