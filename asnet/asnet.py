@@ -1,11 +1,12 @@
-from typing import List, Set
+from typing import List, Dict
 
 import tensorflow as tf
-from itertools import product
 from ippddl_parser.parser import Parser
 from tensorflow import keras
 from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate
 from tensorflow.keras.models import Model
+
+from relations import groundify_predicate, get_related_propositions
 
 
 
@@ -22,7 +23,6 @@ class ASNet:
         self.parser.parse_problem(problem_file)
 
         self.model = self._instance_network()
-
 
 
     def _get_ground_actions(self) -> list:
@@ -44,7 +44,9 @@ class ASNet:
 
 
     def _values_to_index(self, uninedexed_dict: dict, indexing_list: list):
-        """
+        """Given an unindexed dictionary with keys and values, returns an
+        indexed dictionary with the indexes of the original values in the
+        indexing list.
         """
         indexed_dict = {}
         for key, values in uninedexed_dict.items():
@@ -54,30 +56,74 @@ class ASNet:
         return indexed_dict
 
 
-    def _get_actions_from_layer(self, layer, action_indexes: List[int]) -> Lambda:
+    def _builds_connections_layer(self, layer, connection_indexes: List[int]) -> Lambda:
         """Returns an intermediary Lambda layer that receives all inputs from the
         specified layer and outputs only the values of specified action_indexes.
 
         Essentially serves as a mask to filter only outputs from desired actions.
         """
-        return Lambda(lambda x: tf.gather(x, action_indexes, axis=1))(layer)
+        return Lambda(lambda x: tf.gather(x, connection_indexes, axis=1))(layer)
 
 
-    def _build_propositions_layer(self, prev_layer, propositions, act_indexed_relations, layer_num):
-        """Builds a proposition layer.
+    def _build_input_layer(self, actions, pred_indexed_relations):
+        """Builds the specially formated input action layer
+        """
+        input_len: int = 0
+        action_sizes: Dict[str, int] = {}
+        for act in actions:
+            # Considers a value for each related proposition
+            related_prop_num: int = len(pred_indexed_relations[act])
+            # For each related proposition, indicates if it is a goal state
+            goal_info: int = related_prop_num
+            # Adds one more element indicating if the action is applicable
+            input_action_size: int = related_prop_num + goal_info + 1
+
+            action_sizes[act] = input_action_size
+            input_len += input_action_size
+        return Input(shape=(input_len,), name="A1"), action_sizes
+    
+
+    def _build_first_propositions_layer(self, input_layer, input_action_sizes, propositions, act_indexed_relations, actions):
+        """Builds the proposition layer that connects to the input. Since the
+        input has a special format, this is slightly different than other
+        proposition layers.
         """
         propositions_layer = []
         for prep in propositions:
-            related_actions_indexes = act_indexed_relations[prep]
-            prep_neuron = Dense(1, name=f"{'_'.join(prep)}{layer_num}")(
-                self._get_actions_from_layer(prev_layer, related_actions_indexes)
+            related_actions_indexes: List[int] = act_indexed_relations[prep]
+            transformed_indexes: List[int] = []
+            for act_index in related_actions_indexes:
+                act_name: str = actions[act_index]
+                act_input_size: int = input_action_sizes[act_name]
+                # Finds the index of input action by summing the length of all
+                # previous input actions
+                real_act_index: int = sum([input_action_sizes[actions[act_i]] for act_i in range(act_index)])
+                for i in range(real_act_index, real_act_index + act_input_size):
+                    transformed_indexes.append(i)
+            conn_lambda = Lambda(lambda x: tf.gather(x, transformed_indexes, axis=1))(input_layer)
+            prop_neuron = Dense(1, name=f"{'_'.join(prep)}1")(conn_lambda)
+            propositions_layer.append(prop_neuron)
+        # Concatenate all proposition neurons into a single layer
+        prop_layer = Concatenate(name=f"Prop1")(propositions_layer)
+        return prop_layer
+
+
+    def _build_propositions_layer(self, prev_layer, propositions, act_indexed_relations, layer_num: int) -> Concatenate:
+        """Builds a proposition layer.
+        """
+        propositions_layer = []
+        for prop in propositions:
+            related_actions_indexes = act_indexed_relations[prop]
+            prop_neuron = Dense(1, name=f"{'_'.join(prop)}{layer_num}")(
+                self._builds_connections_layer(prev_layer, related_actions_indexes)
             ) # Only connects the proposition neuron to related actions
-            propositions_layer.append(prep_neuron)
-        prep_layer = Concatenate(name=f"Prep{layer_num}")(propositions_layer)
-        return prep_layer
+            propositions_layer.append(prop_neuron)
+        # Concatenate all proposition neurons into a single layer
+        prop_layer = Concatenate(name=f"Prop{layer_num}")(propositions_layer)
+        return prop_layer
 
 
-    def _build_actions_layer(self, prev_layer, actions, pred_indexed_relations, layer_num):
+    def _build_actions_layer(self, prev_layer, actions, pred_indexed_relations, layer_num: int) -> Concatenate:
         """Builds an action layer.
         """
         actions_layer = []
@@ -85,7 +131,7 @@ class ASNet:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             related_prep_indexes = pred_indexed_relations[act]
             act_neuron = Dense(1, name=f"{act_name}{layer_num}")(
-                self._get_actions_from_layer(prev_layer, related_prep_indexes)
+                self._builds_connections_layer(prev_layer, related_prep_indexes)
             ) # Only connects the proposition neuron to related actions
             actions_layer.append(act_neuron)
         act_layer = Concatenate(name=f"Acts{layer_num}")(actions_layer)
@@ -107,20 +153,17 @@ class ASNet:
         act_indexed_relations = self._values_to_index(pred_relations, ground_actions)
         pred_indexed_relations = self._values_to_index(act_relations, propositions)
 
+        input_layer, input_action_sizes = self._build_input_layer(ground_actions, pred_indexed_relations)
 
-        inputs = Input(shape=(len(ground_actions),), name="A1")
+        prop1 = self._build_first_propositions_layer(input_layer, input_action_sizes, propositions, act_indexed_relations, ground_actions)
 
-        prep1 = self._build_propositions_layer(inputs, propositions, act_indexed_relations, 1)
+        act1 = self._build_actions_layer(prop1, ground_actions, pred_indexed_relations, 1)
 
-        act1 = self._build_actions_layer(prep1, ground_actions, pred_indexed_relations, 1)
+        prop2 = self._build_propositions_layer(act1, propositions, act_indexed_relations, 2)
 
-        prep2 = self._build_propositions_layer(act1, propositions, act_indexed_relations, 2)
+        act2 = self._build_actions_layer(prop2, ground_actions, pred_indexed_relations, 2)
 
-        act2 = self._build_actions_layer(prep2, ground_actions, pred_indexed_relations, 2)
-
-        #out = Dense(len(propositions))(prep1)
-
-        return Model(inputs, act2)
+        return Model(input_layer, act2)
 
 
     @staticmethod
@@ -146,64 +189,10 @@ class ASNet:
         return action_relations, predicate_relations
 
 
-def groundify_predicate(pred, objects):
-    if not pred.arguments:
-        yield pred
-        return
-
-    # For each object type of the current predicate, gets all possible objects
-    all_objs = []
-    for type in pred.object_types:
-        if type in objects:
-            all_objs.append(objects[type])
-    
-    # Assigns possible objects to grounded predicates and returns them
-    for assignment in product(*all_objs):
-        # The Predicate object doesn't accept objects with the same name,
-        # which may happen after grounding, so we just return the
-        # Predicate's name and its objects in order
-        yield([pred.name, assignment])
-
-
-def get_related_predicates(action) -> set:
-        """Returns the predicates related to the action.
-        """
-        all_predicates = []
-        for pred in action.positive_preconditions:
-            all_predicates.append(pred[0])
-        for pred in action.negative_preconditions:
-            all_predicates.append(pred[0])
-        for prop_effect in action.add_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred[0])
-        for prop_effect in action.del_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred[0])
-        return set(all_predicates)
-
-
-def get_related_propositions(action) -> set:
-        """Returns the propositions (predicates and their objects) related to
-        the action."""
-        all_predicates = []
-        for pred in action.positive_preconditions:
-            all_predicates.append(pred)
-        for pred in action.negative_preconditions:
-            all_predicates.append(pred)
-        for prop_effect in action.add_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred)
-        for prop_effect in action.del_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred)
-        return set(all_predicates)
-
-
 
 if __name__ == "__main__":
     domain = '../problems/deterministic_blocksworld/domain.pddl'
     problem = '../problems/deterministic_blocksworld/pb1.pddl'
 
-    #asnet = ASNet(parser.action_relations, parser.predicate_relations)
     asnet = ASNet(domain, problem)
     keras.utils.plot_model(asnet.model, "asnet.png", show_shapes=True)
