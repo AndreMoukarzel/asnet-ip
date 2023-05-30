@@ -12,7 +12,6 @@ from relations import groundify_predicate, get_related_propositions
 
 class ASNet:
 
-
     def __init__(self, domain_file: str, problem_file: str) -> None:
         self.domain: str = domain_file
         self.problem: str = problem_file
@@ -21,6 +20,14 @@ class ASNet:
         self.parser.scan_tokens(problem_file)
         self.parser.parse_domain(domain_file)
         self.parser.parse_problem(problem_file)
+
+        # Lists lifted actions and propositions
+        act_relations, pred_relations = self.get_relations(self._get_ground_actions())
+        self.ground_actions = [act for act in act_relations.keys()]
+        self.propositions = [pred for pred in pred_relations.keys()]
+        # List to index actions and propositions by their positions
+        self.act_indexed_relations = self._values_to_index(pred_relations, self.ground_actions)
+        self.pred_indexed_relations = self._values_to_index(act_relations, self.propositions)
 
         self.model = self._instance_network()
 
@@ -32,7 +39,7 @@ class ASNet:
             for act in action.groundify(self.parser.objects, self.parser.types):
                 ground_actions.append(act)
         return ground_actions
-    
+
 
     def _get_propositions(self) -> list:
         """Returns a list of the 'grounded predicates' of the problem instance"""
@@ -73,7 +80,7 @@ class ASNet:
         for act in actions:
             # Considers a value for each related proposition
             related_prop_num: int = len(pred_indexed_relations[act])
-            # For each related proposition, indicates if it is a goal state
+            # For each related proposition, indicates if it is in a goal state
             goal_info: int = related_prop_num
             # Adds one more element indicating if the action is applicable
             input_action_size: int = related_prop_num + goal_info + 1
@@ -81,7 +88,7 @@ class ASNet:
             action_sizes[act] = input_action_size
             input_len += input_action_size
         return Input(shape=(input_len,), name="A1"), action_sizes
-    
+
 
     def _build_first_propositions_layer(self, input_layer, input_action_sizes, propositions, act_indexed_relations, actions):
         """Builds the proposition layer that connects to the input. Since the
@@ -143,27 +150,23 @@ class ASNet:
         and problem.
         
         The network will have layer_num proposition layers and (layer_num + 1)
-        action layers."""
+        action layers.
+        """
+        input_layer, input_action_sizes = self._build_input_layer(self.ground_actions, self.pred_indexed_relations)
 
-        # Lists lifted actions and propositions
-        act_relations, pred_relations = self.get_relations(self._get_ground_actions())
-        ground_actions = [act for act in act_relations.keys()]
-        propositions = [pred for pred in pred_relations.keys()]
-        # 
-        act_indexed_relations = self._values_to_index(pred_relations, ground_actions)
-        pred_indexed_relations = self._values_to_index(act_relations, propositions)
+        last_prop_layer = self._build_first_propositions_layer(input_layer, input_action_sizes, self.propositions, self.act_indexed_relations, self.ground_actions)
 
-        input_layer, input_action_sizes = self._build_input_layer(ground_actions, pred_indexed_relations)
+        last_act_layer = self._build_actions_layer(last_prop_layer, self.ground_actions, self.pred_indexed_relations, 1)
 
-        prop1 = self._build_first_propositions_layer(input_layer, input_action_sizes, propositions, act_indexed_relations, ground_actions)
+        for i in range(2, layer_num + 1):
+           last_prop_layer = self._build_propositions_layer(
+               last_act_layer, self.propositions, self.act_indexed_relations, i
+           )
+           last_act_layer = self._build_actions_layer(
+               last_prop_layer, self.ground_actions, self.pred_indexed_relations, i
+           )
 
-        act1 = self._build_actions_layer(prop1, ground_actions, pred_indexed_relations, 1)
-
-        prop2 = self._build_propositions_layer(act1, propositions, act_indexed_relations, 2)
-
-        act2 = self._build_actions_layer(prop2, ground_actions, pred_indexed_relations, 2)
-
-        return Model(input_layer, act2)
+        return Model(input_layer, last_act_layer)
 
 
     @staticmethod
