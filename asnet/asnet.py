@@ -107,8 +107,9 @@ class ASNet:
                 real_act_index: int = sum([input_action_sizes[actions[act_i]] for act_i in range(act_index)])
                 for i in range(real_act_index, real_act_index + act_input_size):
                     transformed_indexes.append(i)
-            conn_lambda = Lambda(lambda x: tf.gather(x, transformed_indexes, axis=1))(input_layer)
-            prop_neuron = Dense(1, name=f"{'_'.join(prep)}1")(conn_lambda)
+            prop_neuron = Dense(1, name=f"{'_'.join(prep)}1")(
+                self._builds_connections_layer(input_layer, transformed_indexes)
+            )
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
         prop_layer = Concatenate(name=f"Prop1")(propositions_layer)
@@ -166,7 +167,7 @@ class ASNet:
                last_prop_layer, self.ground_actions, self.pred_indexed_relations, i
            )
 
-        return Model(input_layer, last_act_layer)
+        return Model(input_layer, Dense(len(self.ground_actions), activation=tf.nn.softmax)(last_act_layer))
 
 
     @staticmethod
