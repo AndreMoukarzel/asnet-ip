@@ -2,6 +2,7 @@ from typing import List
 
 from asnet import ASNet
 
+import numpy as np
 from tensorflow import keras
 from ippddl_parser.value_iteration import ValueIterator
 
@@ -11,18 +12,18 @@ class Trainer:
     def __init__(self, domain_file: str, problem_file: str) -> None:
         self.net = ASNet(domain_file, problem_file)
         self.parser = self.net.parser
-        self.init_state = self.parser.state
+        self.init_state: str = self.parser.state
 
         # Creates Action instances referenced by the names used in ground_actions.
         # Used when checking if an action is applicable in a state
         self.action_objects = {}
-        ground_acts = self.net._get_ground_actions()
-        for act in ground_acts:
+        self.instance_Actions: list = self.net._get_ground_actions() # List of Action objects representing all ground actions of instance
+        for act in self.instance_Actions:
             self.action_objects[(act.name, act.parameters)] = act
         
         # Calculates value of each state of the problem
         iterator = ValueIterator()
-        self.all_states = iterator.get_all_states(self.parser.state, ground_acts)
+        self.all_states = iterator.get_all_states(self.parser.state, self.instance_Actions)
         self.state_vals = iterator.solve(domain_file, problem_file)
     
 
@@ -70,11 +71,10 @@ class Trainer:
             state_values.append(state_val)
         
         state_best_actions: List[tuple] = []
-        ground_actions = self.net._get_ground_actions()
         for state in self.all_states:
             best_action: tuple = ()
             best_state_val: float = -999.0
-            for act in ground_actions:
+            for act in self.instance_Actions:
                 if act.is_applicable(state):
                     # "Future" states are the s', the states reached by applying the action to current state s 
                     future_states, _ = act.get_possible_resulting_states(state)
@@ -93,6 +93,20 @@ class Trainer:
             state_best_actions.append(best_action)
         
         return state_best_actions
+    
+
+    def _action_to_index(self, action: tuple) -> int:
+        """Given an action tuple of (action name, action parameters), returns
+        its index in the currently instanced ASNet
+        """
+        return self.net.ground_actions.index(action)
+    
+
+    def _index_to_action(self, index: int) -> tuple:
+        """Given an action index in the currently instanced ASNet, returns the
+        corresponding action tuple of (action name, action parameters)
+        """
+        return self.net.ground_actions[index]
 
 
     def _action_to_output(self, action_index: int) -> List[float]:
@@ -106,17 +120,90 @@ class Trainer:
         return action_output
     
 
-    def train(self):
+    def is_goal(self, state: str) -> bool:
+        """Returns if the current state is a goal state"""
+        goal_pos: frozenset = self.parser.positive_goals
+        goal_neg: frozenset = self.parser.negative_goals
+        if goal_pos.issubset(state) and goal_neg.isdisjoint(state):
+            return True
+        return False
+    
+
+    def applicable_actions(self, state: str) -> list:
+        """Returns a list of applicable actions for the state"""
+        if self.is_goal(state):
+            return []
+        
+        app_acts: list = [] # List of Action objects
+        for act in self.instance_Actions:
+            if act.is_applicable(state):
+                app_acts.append(act)
+        return app_acts
+
+
+    def run_policy(self, initial_state: str, max_steps: int = 500) -> List[str]:
+        """Executes the ASNet's chosen actions in the problem instance until
+        a terminal state is found or the number of maximum allowed steps is
+        reached.
+
+        Returns the list of encountered states
+        """
+        states: List[str] = [initial_state]
+        model = self.net.model
+        curr_state: str = initial_state
+        app_actions: list = self.applicable_actions(curr_state)
+        
+        while not self.is_goal(curr_state) and len(app_actions) > 0:
+            input_state: List[float] = self._state_to_input(curr_state)
+            action_probs: np.ndarray = model.predict((input_state,))[0]
+            max_prob: float = action_probs.max()
+            chosen_action_index = np.where(action_probs == max_prob)[0][0]
+            chosen_action: tuple = self._index_to_action(chosen_action_index)
+
+            # Applies chosen action to state, if applicable
+            action_applied: bool = False
+            for act in app_actions:
+                if (act.name, act.parameters) == chosen_action:
+                    action_applied = True
+                    curr_state = act.apply(curr_state)
+                    states.append(curr_state)
+                    app_actions = self.applicable_actions(curr_state)
+            if not action_applied:
+                return states
+        
+        return states
+
+
+    def teacher_rollout(self, initial_state, all_states: List[str], state_best_actions: List[tuple]) -> List[str]:
+        """Rollouts the teacher's policy from the given initial state until
+        a goal or terminal state is reached
+
+        Returns the list of encountered states
+        """
+        states: List[str] = [initial_state]
+        curr_state: str = initial_state
+        app_actions: list = self.applicable_actions(curr_state)
+        
+        while not self.is_goal(curr_state) and len(app_actions) > 0:
+            state_index: int = all_states.index(curr_state)
+            chosen_action: tuple = state_best_actions[state_index]
+
+            # Applies chosen action to state, if applicable
+            action_applied: bool = False
+            for act in app_actions:
+                if (act.name, act.parameters) == chosen_action:
+                    action_applied = True
+                    curr_state = act.apply(curr_state)
+                    states.append(curr_state)
+                    app_actions = self.applicable_actions(curr_state)
+            if not action_applied:
+                return states
+        
+        return states
+
+
+    def train(self, full_epochs: int = 50, train_epochs: int = 100):
         """Trains the instanced ASNet on the problem"""
-        # Gets inputs and outputs to train the model
-        states: List[str] = list(self.all_states)
-        state_best_actions: List[tuple] = self._best_actions_by_state()
-
-        # Converts states and actions to format inputable in model
-        converted_states: List[List[float]] = [self._state_to_input(state) for state in states]
-        best_actions_indexes: List[int] = [self.net.ground_actions.index(act) for act in state_best_actions]
-        converted_best_actions: List[List[float]] = [self._action_to_output(act_ind) for act_ind in best_actions_indexes]
-
         model = self.net.model
         model.compile(
             loss=keras.losses.categorical_crossentropy, # Loss function is logloss
@@ -130,7 +217,30 @@ class Trainer:
             ]
         )
 
-        model.fit(converted_states, converted_best_actions)
+
+        # Gets inputs and outputs to train the model
+        states: List[str] = list(self.all_states)
+        state_best_actions: List[tuple] = self._best_actions_by_state()
+
+        for _ in range(full_epochs):
+            # Runs policy in search of states to be explored in training
+            explored_states: List[str] = self.run_policy(self.init_state)
+            rollout_states: List[str] = []
+            # Rollouts the teacher policy from each state found from the model's run,
+            # to be certain that there will be optimal states in the training
+            for state in explored_states:
+                rollout_states += self.teacher_rollout(state, states, state_best_actions)
+            training_states: List[str] = explored_states + rollout_states
+
+            # Gets "correct" action according to Teacher Planner for each selected state
+            # and converts states and actions to format inputable in model
+            correct_actions: List[tuple] = [state_best_actions[states.index(s)] for s in training_states]
+            converted_states: List[List[float]] = [self._state_to_input(s) for s in training_states]
+            correct_actions_indexes: List[int] = [self._action_to_index(act) for act in correct_actions]
+            converted_actions: List[List[float]] = [self._action_to_output(act_ind) for act_ind in correct_actions_indexes]
+
+            minibatch_size: int = len(training_states)//2 # Hard-coded batch size to be half of training set
+            model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size)
 
 
 
@@ -139,4 +249,8 @@ if __name__ == "__main__":
     problem = '../problems/deterministic_blocksworld/pb1.pddl'
 
     trainer = Trainer(domain, problem)
-    trainer.train()
+    trainer.train(full_epochs=3, train_epochs=100)
+    print("Executing a test policy with the Network")
+    policy = trainer.run_policy(trainer.init_state)
+    for state in policy:
+        print(state)
