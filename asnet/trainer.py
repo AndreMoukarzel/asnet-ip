@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 from asnet import ASNet
 
@@ -141,14 +141,15 @@ class Trainer:
         return app_acts
 
 
-    def run_policy(self, initial_state: str, max_steps: int = 500) -> List[str]:
+    def run_policy(self, initial_state: str, max_steps: int = 500) -> Tuple[List[str], List[tuple]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
         reached.
 
-        Returns the list of encountered states
+        Returns the list of encountered states and the list of taken actions
         """
         states: List[str] = [initial_state]
+        actions: List[tuple] = []
         model = self.net.model
         curr_state: str = initial_state
         app_actions: list = self.applicable_actions(curr_state)
@@ -159,6 +160,7 @@ class Trainer:
             max_prob: float = action_probs.max()
             chosen_action_index = np.where(action_probs == max_prob)[0][0]
             chosen_action: tuple = self._index_to_action(chosen_action_index)
+            actions.append(chosen_action)
 
             # Applies chosen action to state, if applicable
             action_applied: bool = False
@@ -169,9 +171,9 @@ class Trainer:
                     states.append(curr_state)
                     app_actions = self.applicable_actions(curr_state)
             if not action_applied:
-                return states
-        
-        return states
+                return states, actions
+
+        return states, actions
 
 
     def teacher_rollout(self, initial_state, all_states: List[str], state_best_actions: List[tuple]) -> List[str]:
@@ -217,14 +219,13 @@ class Trainer:
             ]
         )
 
-
         # Gets inputs and outputs to train the model
         states: List[str] = list(self.all_states)
         state_best_actions: List[tuple] = self._best_actions_by_state()
 
         for _ in range(full_epochs):
             # Runs policy in search of states to be explored in training
-            explored_states: List[str] = self.run_policy(self.init_state)
+            explored_states: List[str] = self.run_policy(self.init_state)[0]
             rollout_states: List[str] = []
             # Rollouts the teacher policy from each state found from the model's run,
             # to be certain that there will be optimal states in the training
@@ -246,11 +247,13 @@ class Trainer:
 
 if __name__ == "__main__":
     domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb1.pddl'
+    problem = '../problems/deterministic_blocksworld/pb5.pddl'
 
     trainer = Trainer(domain, problem)
-    trainer.train(full_epochs=3, train_epochs=100)
+    trainer.train(full_epochs=15, train_epochs=200)
     print("Executing a test policy with the Network")
-    policy = trainer.run_policy(trainer.init_state)
-    for state in policy:
-        print(state)
+    states, actions = trainer.run_policy(trainer.init_state)
+    for i, act in enumerate(actions):
+        print("State: ", states[i])
+        print("Action taken: ", act)
+    print("State: ", states[-1])
