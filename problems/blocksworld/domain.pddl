@@ -18,7 +18,7 @@
   )
   (:action put-on-block
     :parameters (?b1 ?b2 - block)
-    :precondition (and (holding ?b1) (clear ?b1) (clear ?b2) (not (= ?b1 ?b2)))
+    :precondition (and (holding ?b1) (clear ?b1) (clear ?b2) (not (equal ?b1 ?b2)))
     :effect (probabilistic 3/4 (and (on ?b1 ?b2) (emptyhand) (clear ?b1) (not (holding ?b1)) (not (clear ?b2)))
                            1/4 (and (on-table ?b1) (emptyhand) (clear ?b1) (not (holding ?b1))))
   )
@@ -35,7 +35,7 @@
   )
   (:action put-tower-on-block
     :parameters (?b1 ?b2 ?b3 - block)
-    :precondition (and (holding ?b2) (on ?b1 ?b2) (clear ?b3) (not (= ?b1 ?b3)))
+    :precondition (and (holding ?b2) (on ?b1 ?b2) (clear ?b3) (not (equal ?b1 ?b3)))
     :effect (probabilistic 1/10 (and (on ?b2 ?b3) (emptyhand) (not (holding ?b2)) (not (clear ?b3)))
                            9/10 (and (on-table ?b2) (emptyhand) (not (holding ?b2))))
   )
