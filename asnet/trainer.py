@@ -141,7 +141,7 @@ class Trainer:
         return app_acts
 
 
-    def run_policy(self, initial_state: str, max_steps: int = 500) -> Tuple[List[str], List[tuple]]:
+    def run_policy(self, initial_state: str, max_steps: int = 200) -> Tuple[List[str], List[tuple]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
         reached.
@@ -170,7 +170,7 @@ class Trainer:
                     curr_state = act.apply(curr_state)
                     states.append(curr_state)
                     app_actions = self.applicable_actions(curr_state)
-            if not action_applied:
+            if not action_applied or len(actions) >= max_steps:
                 return states, actions
 
         return states, actions
@@ -206,18 +206,13 @@ class Trainer:
 
     def train(self, full_epochs: int = 50, train_epochs: int = 100):
         """Trains the instanced ASNet on the problem"""
-        model = self.net.model
-        model.compile(
-            loss=keras.losses.categorical_crossentropy, # Loss function is logloss
-            optimizer=keras.optimizers.SGD(learning_rate=0.0005),
-            metrics=[
-                'accuracy',
-                keras.metrics.Precision(),
-                keras.metrics.Recall(),
-                'MeanSquaredError',
-                'AUC'
-            ]
-        )
+
+        # Configures Early Stopping configuration for training
+        callback = keras.callbacks.EarlyStopping(monitor='auc', patience=15, min_delta=0.001)
+
+        # Compiles Neural Network
+        self.net.compile()
+        model = self.net.get_model()
 
         # Gets inputs and outputs to train the model
         states: List[str] = list(self.all_states)
@@ -241,13 +236,21 @@ class Trainer:
             converted_actions: List[List[float]] = [self._action_to_output(act_ind) for act_ind in correct_actions_indexes]
 
             minibatch_size: int = len(training_states)//2 # Hard-coded batch size to be half of training set
-            model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size)
+            history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback])
+
+            if history.history['auc'][-1] >= 0.99999:
+                # If the model is already extremely efficient in replicating the Teacher, we stop the training early
+                break
+
+
 
 
 
 if __name__ == "__main__":
     domain = '../problems/deterministic_blocksworld/domain.pddl'
     problem = '../problems/deterministic_blocksworld/pb5.pddl'
+    #domain = '../problems/blocksworld/domain.pddl'
+    #problem = '../problems/blocksworld/5blocks.pddl'
 
     trainer = Trainer(domain, problem)
     trainer.train(full_epochs=15, train_epochs=200)
