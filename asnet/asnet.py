@@ -168,6 +168,26 @@ class ASNet:
            )
 
         return Model(input_layer, Dense(len(self.ground_actions), activation=tf.nn.softmax)(last_act_layer))
+    
+
+    def compile(self) -> None:
+        """Compiles the ASNet to be trained"""
+        self.model.compile(
+            loss=keras.losses.categorical_crossentropy, # Loss function is logloss
+            optimizer=keras.optimizers.SGD(learning_rate=0.0005),
+            metrics=[
+                'accuracy',
+                keras.metrics.Precision(),
+                keras.metrics.Recall(),
+                'MeanSquaredError',
+                'AUC'
+            ]
+        )
+    
+
+    def get_model(self):
+        """Returns the instanced Neural Network"""
+        return self.model
 
 
     @staticmethod
