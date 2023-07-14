@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 import tensorflow as tf
 from ippddl_parser.parser import Parser
@@ -63,13 +63,13 @@ class ASNet:
         return indexed_dict
 
 
-    def _builds_connections_layer(self, layer, connection_indexes: List[int]) -> Lambda:
+    def _builds_connections_layer(self, layer, connection_indexes: List[int], name: str) -> Lambda:
         """Returns an intermediary Lambda layer that receives all inputs from the
         specified layer and outputs only the values of specified action_indexes.
 
         Essentially serves as a mask to filter only outputs from desired actions.
         """
-        return Lambda(lambda x: tf.gather(x, connection_indexes, axis=1))(layer)
+        return Lambda(lambda x: tf.gather(x, connection_indexes, axis=1), name=name)(layer)
 
 
     def _build_input_layer(self, actions, pred_indexed_relations):
@@ -87,7 +87,7 @@ class ASNet:
 
             action_sizes[act] = input_action_size
             input_len += input_action_size
-        return Input(shape=(input_len,), name="A1"), action_sizes
+        return Input(shape=(input_len,), name="Input"), action_sizes
 
 
     def _build_first_propositions_layer(self, input_layer, input_action_sizes, propositions, act_indexed_relations, actions):
@@ -107,8 +107,8 @@ class ASNet:
                 real_act_index: int = sum([input_action_sizes[actions[act_i]] for act_i in range(act_index)])
                 for i in range(real_act_index, real_act_index + act_input_size):
                     transformed_indexes.append(i)
-            prop_neuron = Dense(1, name=f"{'_'.join(prep)}1")(
-                self._builds_connections_layer(input_layer, transformed_indexes)
+            prop_neuron = Dense(1, name=f"{'_'.join(prep)}_1")(
+                self._builds_connections_layer(input_layer, transformed_indexes, name=f"lambda_{'_'.join(prep)}_1")
             )
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
@@ -122,8 +122,8 @@ class ASNet:
         propositions_layer = []
         for prop in propositions:
             related_actions_indexes = act_indexed_relations[prop]
-            prop_neuron = Dense(1, name=f"{'_'.join(prop)}{layer_num}")(
-                self._builds_connections_layer(prev_layer, related_actions_indexes)
+            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")(
+                self._builds_connections_layer(prev_layer, related_actions_indexes, name=f"lambda_{'_'.join(prop)}_{layer_num}")
             ) # Only connects the proposition neuron to related actions
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
@@ -138,8 +138,8 @@ class ASNet:
         for act in actions:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             related_prep_indexes = pred_indexed_relations[act]
-            act_neuron = Dense(1, name=f"{act_name}{layer_num}")(
-                self._builds_connections_layer(prev_layer, related_prep_indexes)
+            act_neuron = Dense(1, name=f"{act_name}_{layer_num}")(
+                self._builds_connections_layer(prev_layer, related_prep_indexes, name=f"lambda_{act_name}_{layer_num}")
             ) # Only connects the proposition neuron to related actions
             actions_layer.append(act_neuron)
         act_layer = Concatenate(name=f"Acts{layer_num}")(actions_layer)
@@ -167,7 +167,9 @@ class ASNet:
                last_prop_layer, self.ground_actions, self.pred_indexed_relations, i
            )
 
-        return Model(input_layer, Dense(len(self.ground_actions), activation=tf.nn.softmax)(last_act_layer))
+        return Model(
+            input_layer, Dense(len(self.ground_actions), activation=tf.nn.softmax, name=f"Out_{layer_num + 1}")(last_act_layer)
+        )
     
 
     def compile(self) -> None:
@@ -188,6 +190,25 @@ class ASNet:
     def get_model(self):
         """Returns the instanced Neural Network"""
         return self.model
+    
+
+    def get_weights_by_layer(self) -> List[Tuple[str, List[List[float]]]]:
+        """Returns a list of tuples of format (layer name, layer type, layer weights & biases)"""
+        weights_by_layer: List[Tuple[str, List[List[float]]]] = []
+        layer_type: str = "proposition"
+
+        for layer in self.model.layers:
+            name = layer.name
+            weights = layer.get_weights()
+
+            if "Prop" in name:
+                layer_type = "action"
+            elif "Acts" in name:
+                layer_type = "proposition"
+            
+            if weights != []:
+                weights_by_layer.append((name, layer_type, layer.get_weights()))
+        return weights_by_layer
 
 
     @staticmethod
