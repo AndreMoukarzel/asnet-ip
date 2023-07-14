@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 from asnet import ASNet
 
@@ -241,8 +241,54 @@ class Trainer:
             if history.history['auc'][-1] >= 0.99999:
                 # If the model is already extremely efficient in replicating the Teacher, we stop the training early
                 break
+    
 
+    def get_lifted_weights(self, pooling: str='max'):
+        """Returns the weights of the trained ASNet pooled for the lifted
+        propositions. Those weights should be appliable in other ASNets created
+        in the same domain.
+        """
+        grounded_weights: list = self.net.get_weights_by_layer()
+        lifted_weights: Dict[str, List[List[float]]] = {}
 
+        # Lifts actions and propositions and appends all found weights for pooling
+        for layer_name, type, weights_and_biases in grounded_weights:
+            layer_num: str = layer_name.split('_')[-1]
+            split_name: str = layer_name.split('_')[:-1]
+            lifted_name: str = split_name[0]
+
+            if len(split_name) > 1:
+                # Gives generic lifted names to objects. This way, we can
+                # differentiate act-x-y from act-x-x, which will have distinct
+                # weight formats
+                obj_names: List[str] = split_name[1:]
+                seen_objs: list = []
+                for i, obj in enumerate(obj_names):
+                    if obj in seen_objs:
+                        obj_names[i] = f"obj{seen_objs.index(obj) + 1}"
+                    else:
+                        seen_objs.append(obj)
+                        obj_names[i] = f"obj{len(seen_objs)}"
+                lifted_name += '_' + '_'.join(obj_names)
+            lifted_name += '-' + layer_num
+
+            if lifted_name in lifted_weights:
+                # If lifted object was already seen before, appends its weights for future pooling
+                lifted_weights[lifted_name].append(weights_and_biases)
+            else:
+                lifted_weights[lifted_name] = [weights_and_biases]
+        
+        # Pools lifted actions' and propositions' weights
+        for key, weights_and_biases in lifted_weights.items():
+            if pooling == 'max':
+                weights = np.array([val[0] for val in weights_and_biases])
+                biases = np.array([val[1] for val in weights_and_biases])
+                lifted_weights[key] = (np.max(weights, axis=0), np.max(biases, axis=0))
+            elif pooling == 'mean':
+                lifted_weights[key] = (np.mean(weights, axis=0), np.mean(biases, axis=0))
+            else:
+                raise("Unkown pooling method in get_lifted_weights()!")
+        return lifted_weights
 
 
 
