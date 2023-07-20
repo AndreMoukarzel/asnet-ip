@@ -190,25 +190,6 @@ class ASNet:
     def get_model(self):
         """Returns the instanced Neural Network"""
         return self.model
-    
-
-    def get_weights_by_layer(self) -> List[Tuple[str, List[List[float]]]]:
-        """Returns a list of tuples of format (layer name, layer type, layer weights & biases)"""
-        weights_by_layer: List[Tuple[str, List[List[float]]]] = []
-        layer_type: str = "proposition"
-
-        for layer in self.model.layers:
-            name = layer.name
-            weights = layer.get_weights()
-
-            if "Prop" in name:
-                layer_type = "action"
-            elif "Acts" in name:
-                layer_type = "proposition"
-            
-            if weights != []:
-                weights_by_layer.append((name, layer_type, layer.get_weights()))
-        return weights_by_layer
 
 
     @staticmethod
