@@ -67,11 +67,11 @@ def get_lifted_weights(asnet: ASNet, pooling: str='max') -> Dict[str, List[List[
     # Pools grounded actions' and propositions' weights into singular weight
     # values for the lifted actions and propositions
     for key, weights_and_biases in lifted_weights.items():
+        weights = np.array([val[0] for val in weights_and_biases])
+        biases = np.array([val[1] for val in weights_and_biases])
         if pooling == 'max':
-            weights = np.array([val[0] for val in weights_and_biases])
-            biases = np.array([val[1] for val in weights_and_biases])
             lifted_weights[key] = (np.max(weights, axis=0), np.max(biases, axis=0))
-        elif pooling == 'mean':
+        elif pooling == 'mean' or pooling == 'avg':
             lifted_weights[key] = (np.mean(weights, axis=0), np.mean(biases, axis=0))
         else:
             raise("Unkown pooling method in get_lifted_weights()!")
