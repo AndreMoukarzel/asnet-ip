@@ -1,9 +1,10 @@
 from typing import List, Dict, Tuple
+import itertools
 
 import tensorflow as tf
 from ippddl_parser.parser import Parser
 from tensorflow import keras
-from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate
+from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
 from tensorflow.keras.models import Model
 
 from relations import groundify_predicate, get_related_propositions
@@ -24,7 +25,9 @@ class ASNet:
         # Lists lifted actions and propositions
         act_relations, pred_relations = self.get_relations(self._get_ground_actions())
         self.ground_actions = [act for act in act_relations.keys()]
+        self.ground_actions.sort()
         self.propositions = [pred for pred in pred_relations.keys()]
+        self.propositions.sort()
         # List to index actions and propositions by their positions
         self.act_indexed_relations = self._values_to_index(pred_relations, self.ground_actions)
         self.pred_indexed_relations = self._values_to_index(act_relations, self.propositions)
@@ -52,7 +55,7 @@ class ASNet:
         """Returns a list of the 'grounded predicates' of the problem instance"""
         propositions = []
         for pred in self.parser.predicates:
-            for prop in groundify_predicate(pred, self.parser.objects): #pred.groundify(self.parser.objects):
+            for prop in groundify_predicate(pred, self.parser.objects):
                 propositions.append(prop)
         return propositions
 
@@ -121,6 +124,55 @@ class ASNet:
         # Concatenate all proposition neurons into a single layer
         prop_layer = Concatenate(name=f"Prop1")(propositions_layer)
         return prop_layer
+    
+
+    def _get_related_predicates(self, related_action_indexes) -> List[List[int]]:
+        """Returns a list where each element is a list of action indexes that
+        refer to the same action and have at least one predicate in a common
+        position.
+        (i. e. 'drive(shakey, hall, kitchen)' and 'drive(shakey, hall, office)')
+        """
+        related_predicates: List[List[int]] = []
+
+        for act_index in related_action_indexes:
+            action: tuple = self.ground_actions[act_index]
+            act_name: str = action[0]
+            act_predicates: Tuple[str] = action[1]
+            related_indexes: List[int] = [act_index]
+            
+            for other_act_index in related_action_indexes:
+                if other_act_index != act_index:
+                    other_action: str = self.ground_actions[other_act_index]
+                    other_predicates: Tuple[str] = other_action[1]
+
+                    # Checks for other related actions representing the same action type
+                    if act_name == other_action[0]:
+                        # If both actions have a common predicate in the same position, they are related
+                        for i, pred in enumerate(act_predicates):
+                            if pred == other_predicates[i]:
+                                related_indexes.append(other_act_index)
+                                break
+            
+            related_indexes = list(set(related_indexes)) # Removes repetitions
+            related_indexes.sort() # Sorts list for future repetition removal in related_predicates
+
+            related_predicates.append(related_indexes)
+        
+        # Removes repetitions
+        related_predicates.sort()
+        related_predicates = list(val for val,_ in itertools.groupby(related_predicates))
+
+        return related_predicates
+
+
+    def _pool_related_predicates(self, prev_layer, related_predicates, name: str) -> Reshape:
+        """Pools maximum value of propositions with related predicates into a
+        a single output
+        """
+        lambda_layers = []
+        for pred in related_predicates:
+            lambda_layers.append(Lambda(lambda x: tf.gather(x, pred, axis=1))(prev_layer))
+        return Reshape([1])(Maximum(name=name)(lambda_layers))
 
 
     def _build_propositions_layer(self, prev_layer, propositions, act_indexed_relations, layer_num: int) -> Concatenate:
@@ -128,10 +180,24 @@ class ASNet:
         """
         propositions_layer = []
         for prop in propositions:
-            related_actions_indexes = act_indexed_relations[prop]
-            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")(
-                self._builds_connections_layer(prev_layer, related_actions_indexes, name=f"lambda_{'_'.join(prop)}_{layer_num}")
-            ) # Only connects the proposition neuron to related actions
+            related_actions_indexes: List[int] = act_indexed_relations[prop]
+            related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
+
+            pooled_layers: list = []
+            for i, preds in enumerate(related_predicates):
+                if len(preds) > 1:
+                    pooled_layers.append(
+                        self._pool_related_predicates(prev_layer, preds, name=f"pooled_{'_'.join(prop)}_{i}_{layer_num}")
+                    )
+            # Gathers all propositions with no relation to others into a single Lambda layer
+            solo_actions: List[int] = self.unify_solo_elements(related_predicates)
+            solo_lambda = self._builds_connections_layer(prev_layer, solo_actions, name=f"solo_{'_'.join(prop)}_{layer_num}")
+            pooled_layers.append(solo_lambda)
+
+            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}")(pooled_layers)
+
+            # Creates a neuron representing a single proposition from the proposition layer
+            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")(concat_pooled)
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
         prop_layer = Concatenate(name=f"Prop{layer_num}")(propositions_layer)
@@ -220,12 +286,23 @@ class ASNet:
                         predicate_relations[pred] = set(list(related_acts) + [action])
         
         return action_relations, predicate_relations
+    
+
+    @staticmethod
+    def unify_solo_elements(all_elements: List[list]) -> list:
+        """Given a list of lists, returns the concatenation of all
+        single-element lists."""
+        solo_elements: list = []
+        for elements in all_elements:
+            if len(elements) == 1:
+                solo_elements.append(elements[0])
+        return solo_elements
 
 
 
 if __name__ == "__main__":
     domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb1.pddl'
+    problem = '../problems/deterministic_blocksworld/pb3.pddl'
 
     asnet = ASNet(domain, problem)
     keras.utils.plot_model(asnet.model, "asnet.jpg", show_shapes=True)
