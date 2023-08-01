@@ -37,7 +37,14 @@ class ASNet:
         ground_actions = []
         for action in self.parser.actions:
             for act in action.groundify(self.parser.objects, self.parser.types):
-                ground_actions.append(act)
+                # Does not add actions invalidated by equality preconditions
+                invalid_equalty: bool = False
+                for precond in act.negative_preconditions:
+                    if precond[0] == 'equal' and precond[1] == precond[2]:
+                        invalid_equalty = True
+                
+                if not invalid_equalty:
+                    ground_actions.append(act)
         return ground_actions
 
 
@@ -221,4 +228,4 @@ if __name__ == "__main__":
     problem = '../problems/deterministic_blocksworld/pb1.pddl'
 
     asnet = ASNet(domain, problem)
-    keras.utils.plot_model(asnet.model, "asnet.png", show_shapes=True)
+    keras.utils.plot_model(asnet.model, "asnet.jpg", show_shapes=True)
