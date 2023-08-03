@@ -178,7 +178,7 @@ class ASNet:
     def _build_propositions_layer(self, prev_layer, propositions, act_indexed_relations, layer_num: int) -> Concatenate:
         """Builds a proposition layer.
         """
-        propositions_layer = []
+        propositions_layer: List[Dense] = []
         for prop in propositions:
             related_actions_indexes: List[int] = act_indexed_relations[prop]
             related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
@@ -206,14 +206,33 @@ class ASNet:
 
     def _build_actions_layer(self, prev_layer, actions, pred_indexed_relations, layer_num: int) -> Concatenate:
         """Builds an action layer.
+
+        All action layers representing a same action (e.g. PickUp(a) and PickUp(b)) share weights, so their weights are
+        generalizable in the domain.
         """
-        actions_layer = []
+        actions_layer: List[Dense] = []
+        lifted_act_neurons: Dict[str, Dense] = {}
         for act in actions:
             act_name: str = act[0] + '_' + '_'.join(act[1])
-            related_prep_indexes = pred_indexed_relations[act]
-            act_neuron = Dense(1, name=f"{act_name}_{layer_num}")(
+            lifted_act_name: str = act[0]
+            related_prep_indexes: List[int] = pred_indexed_relations[act]
+
+            lambda_layer = (
                 self._builds_connections_layer(prev_layer, related_prep_indexes, name=f"lambda_{act_name}_{layer_num}")
             ) # Only connects the proposition neuron to related actions
+            act_neuron = Dense(1, name=f"{act_name}_{layer_num}")
+            act_neuron.build(lambda_layer.shape)
+
+            # Weight sharing between actions neurons representing the same action with different predicates
+            if lifted_act_name not in lifted_act_neurons:
+                # First time action was seen
+                lifted_act_neurons[lifted_act_name] = act_neuron
+            else:
+                # Share weights with other actions of same type
+                self.share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)#, lambda_layer.shape)
+            
+            act_neuron = act_neuron(lambda_layer)
+
             actions_layer.append(act_neuron)
         act_layer = Concatenate(name=f"Acts{layer_num}")(actions_layer)
         return act_layer
@@ -297,7 +316,15 @@ class ASNet:
             if len(elements) == 1:
                 solo_elements.append(elements[0])
         return solo_elements
+    
 
+    @staticmethod
+    def share_layer_weights(layer1, layer2):
+        layer2.kernel = layer1.kernel
+        layer2.bias = layer1.bias
+        layer2._trainable_weights = []
+        layer2._trainable_weights.append(layer2.kernel)
+        layer2._trainable_weights.append(layer2.bias)
 
 
 if __name__ == "__main__":
@@ -305,4 +332,4 @@ if __name__ == "__main__":
     problem = '../problems/deterministic_blocksworld/pb3.pddl'
 
     asnet = ASNet(domain, problem)
-    keras.utils.plot_model(asnet.model, "asnet.jpg", show_shapes=True)
+    keras.utils.plot_model(asnet.model, "asnet1.jpg", show_shapes=True)
