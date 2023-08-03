@@ -105,18 +105,11 @@ class ASNet:
         input has a special format, this is slightly different than other
         proposition layers.
         """
-        propositions_layer = []
+        propositions_layer: List[Dense] = []
         for prep in propositions:
             related_actions_indexes: List[int] = act_indexed_relations[prep]
-            transformed_indexes: List[int] = []
-            for act_index in related_actions_indexes:
-                act_name: str = actions[act_index]
-                act_input_size: int = input_action_sizes[act_name]
-                # Finds the index of input action by summing the length of all
-                # previous input actions
-                real_act_index: int = sum([input_action_sizes[actions[act_i]] for act_i in range(act_index)])
-                for i in range(real_act_index, real_act_index + act_input_size):
-                    transformed_indexes.append(i)
+            transformed_indexes: List[int] = self.action_indexes_to_input(related_actions_indexes, actions, input_action_sizes)
+
             prop_neuron = Dense(1, name=f"{'_'.join(prep)}_1")(
                 self._builds_connections_layer(input_layer, transformed_indexes, name=f"lambda_{'_'.join(prep)}_1")
             )
@@ -179,25 +172,39 @@ class ASNet:
         """Builds a proposition layer.
         """
         propositions_layer: List[Dense] = []
+        lifted_prop_neurons: Dict[str, Dense] = {}
         for prop in propositions:
+            lifted_prop_name: str = prop[0]
             related_actions_indexes: List[int] = act_indexed_relations[prop]
             related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
 
             pooled_layers: list = []
             for i, preds in enumerate(related_predicates):
+                # Pools related predicates into single values before adding them as input
                 if len(preds) > 1:
                     pooled_layers.append(
                         self._pool_related_predicates(prev_layer, preds, name=f"pooled_{'_'.join(prop)}_{i}_{layer_num}")
                     )
             # Gathers all propositions with no relation to others into a single Lambda layer
-            solo_actions: List[int] = self.unify_solo_elements(related_predicates)
-            solo_lambda = self._builds_connections_layer(prev_layer, solo_actions, name=f"solo_{'_'.join(prop)}_{layer_num}")
+            solo_preds: List[int] = self.unify_solo_elements(related_predicates)
+            solo_lambda = self._builds_connections_layer(prev_layer, solo_preds, name=f"solo_{'_'.join(prop)}_{layer_num}")
             pooled_layers.append(solo_lambda)
 
             concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}")(pooled_layers)
 
             # Creates a neuron representing a single proposition from the proposition layer
-            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")(concat_pooled)
+            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")
+            prop_neuron.build(concat_pooled.shape)
+
+            # Weight sharing between prop neurons representing the same action with different predicates
+            if lifted_prop_name not in lifted_prop_neurons:
+                # First time prop was seen
+                lifted_prop_neurons[lifted_prop_name] = prop_neuron
+            else:
+                # Share weights with other prop of same type
+                self.share_layer_weights(lifted_prop_neurons[lifted_prop_name], prop_neuron)
+            
+            prop_neuron = prop_neuron(concat_pooled)
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
         prop_layer = Concatenate(name=f"Prop{layer_num}")(propositions_layer)
@@ -229,7 +236,7 @@ class ASNet:
                 lifted_act_neurons[lifted_act_name] = act_neuron
             else:
                 # Share weights with other actions of same type
-                self.share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)#, lambda_layer.shape)
+                self.share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)
             
             act_neuron = act_neuron(lambda_layer)
 
@@ -305,6 +312,28 @@ class ASNet:
                         predicate_relations[pred] = set(list(related_acts) + [action])
         
         return action_relations, predicate_relations
+    
+
+    @staticmethod
+    def action_indexes_to_input(related_actions_indexes, actions, input_action_sizes) -> List[int]:
+        """Transforms action indexes to the equivalent format found in the
+        input vector composed of only boolean values representing all predicates.
+        
+        Returns the list of action indexes transformed into the equivalent input
+        indexes.
+        """
+        transformed_indexes: List[int] = []
+
+        for act_index in related_actions_indexes:
+            act_name: str = actions[act_index]
+            act_input_size: int = input_action_sizes[act_name]
+            # Finds the index of input action by summing the length of all
+            # previous input actions
+            real_act_index: int = sum([input_action_sizes[actions[act_i]] for act_i in range(act_index)])
+            for i in range(real_act_index, real_act_index + act_input_size):
+                transformed_indexes.append(i)
+        
+        return transformed_indexes
     
 
     @staticmethod
