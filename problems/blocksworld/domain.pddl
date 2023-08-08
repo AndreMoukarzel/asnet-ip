@@ -29,7 +29,7 @@
   )
   (:action pick-tower
     :parameters (?b1 ?b2 ?b3 - block)
-    :precondition (and (emptyhand) (clear ?b1) (on ?b1 ?b2) (on ?b2 ?b3))
+    :precondition (and (emptyhand) (clear ?b1) (on ?b1 ?b2) (on ?b2 ?b3) (not (equal ?b1 ?b2)) (not (equal ?b2 ?b3)))
     :effect
       (probabilistic 1/10 (and (holding ?b2) (clear ?b3) (not (emptyhand)) (not (on ?b2 ?b3))))
   )
@@ -41,7 +41,7 @@
   )
   (:action put-tower-down
     :parameters (?b1 ?b2 - block)
-    :precondition (and (holding ?b2) (on ?b1 ?b2))
+    :precondition (and (holding ?b2) (on ?b1 ?b2) (not (equal ?b1 ?b2)))
     :effect (and (on-table ?b2) (emptyhand) (not (holding ?b2)))
   )
 )
