@@ -1,3 +1,10 @@
+"""Contains the ASNet class, used for instancing an Action Schema Network.
+
+The only trainable layers of the network are its action and proposition layers.
+All other layers, such as the Lambda and Concatenate layers, are used simply to
+make sure the action and proposition layers have the appropriate format to have
+shareable weights.
+"""
 from typing import List, Dict, Tuple
 import itertools
 
@@ -10,6 +17,9 @@ from tensorflow.keras.models import Model
 from relations import groundify_predicate, get_related_propositions
 
 
+DEBUG: bool = False
+
+
 
 class ASNet:
 
@@ -17,11 +27,15 @@ class ASNet:
         self.domain: str = domain_file
         self.problem: str = problem_file
         self.parser: Parser = Parser()
+        if DEBUG:
+            print("Building parser")
         self.parser.scan_tokens(domain_file)
         self.parser.scan_tokens(problem_file)
         self.parser.parse_domain(domain_file)
         self.parser.parse_problem(problem_file)
 
+        if DEBUG:
+            print("get ground actions")
         # Lists lifted actions and propositions
         act_relations, pred_relations = self.get_relations(self._get_ground_actions())
         self.ground_actions = [act for act in act_relations.keys()]
@@ -79,7 +93,7 @@ class ASNet:
 
         Essentially serves as a mask to filter only outputs from desired actions.
         """
-        return Lambda(lambda x: tf.gather(x, connection_indexes, axis=1), name=name)(layer)
+        return Lambda(lambda x: tf.gather(x, connection_indexes, axis=1), name=name, trainable=False)(layer)
 
 
     def _build_input_layer(self, actions, pred_indexed_relations):
@@ -108,10 +122,18 @@ class ASNet:
         layer_num: int = 1
         propositions_layer: List[Dense] = []
         lifted_prop_neurons: Dict[str, Dense] = {}
+        if DEBUG:
+            print("First Prop Layer\n")
         for prop in propositions:
+            if DEBUG:
+                print(f"Building {prop} Layer")
             lifted_prop_name: str = prop[0]
             related_actions_indexes: List[int] = act_indexed_relations[prop]
+            if DEBUG:
+                print("\tGetting related")
             related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
+            if DEBUG:
+                print("\tDone getting related")
 
             pooled_layers: list = []
             for i, preds in enumerate(related_predicates):
@@ -127,7 +149,7 @@ class ASNet:
             solo_lambda = self._builds_connections_layer(input_layer, transformed_solo_indexes, name=f"solo_{'_'.join(prop)}_{layer_num}")
             pooled_layers.append(solo_lambda)
 
-            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}")(pooled_layers)
+            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}", trainable=False)(pooled_layers)
 
             # Creates a neuron representing a single proposition from the proposition layer
             prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")
@@ -144,7 +166,7 @@ class ASNet:
             prop_neuron = prop_neuron(concat_pooled)
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
-        prop_layer = Concatenate(name=f"Prop{layer_num}")(propositions_layer)
+        prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
         return prop_layer
     
 
@@ -193,8 +215,8 @@ class ASNet:
         """
         lambda_layers = []
         for pred in related_predicates:
-            lambda_layers.append(Lambda(lambda x: tf.gather(x, pred, axis=1))(prev_layer))
-        return Reshape([1])(Maximum(name=name)(lambda_layers))
+            lambda_layers.append(Lambda(lambda x: tf.gather(x, pred, axis=1), trainable=False)(prev_layer))
+        return Reshape([1], trainable=False)(Maximum(name=name, trainable=False)(lambda_layers))
 
 
     def _build_propositions_layer(self, prev_layer, propositions, act_indexed_relations, layer_num: int) -> Concatenate:
@@ -202,10 +224,18 @@ class ASNet:
         """
         propositions_layer: List[Dense] = []
         lifted_prop_neurons: Dict[str, Dense] = {}
+        if DEBUG:
+            print(f"Prop Layer {layer_num}\n")
         for prop in propositions:
+            if DEBUG:
+                print(f"Building {prop} Layer")
             lifted_prop_name: str = prop[0]
             related_actions_indexes: List[int] = act_indexed_relations[prop]
+            if DEBUG:
+                print("\tGetting related")
             related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
+            if DEBUG:
+                print("\tDone getting related")
 
             pooled_layers: list = []
             for i, preds in enumerate(related_predicates):
@@ -219,7 +249,7 @@ class ASNet:
             solo_lambda = self._builds_connections_layer(prev_layer, solo_preds, name=f"solo_{'_'.join(prop)}_{layer_num}")
             pooled_layers.append(solo_lambda)
 
-            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}")(pooled_layers)
+            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}", trainable=False)(pooled_layers)
 
             # Creates a neuron representing a single proposition from the proposition layer
             prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")
@@ -236,7 +266,7 @@ class ASNet:
             prop_neuron = prop_neuron(concat_pooled)
             propositions_layer.append(prop_neuron)
         # Concatenate all proposition neurons into a single layer
-        prop_layer = Concatenate(name=f"Prop{layer_num}")(propositions_layer)
+        prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
         return prop_layer
 
 
@@ -248,6 +278,8 @@ class ASNet:
         """
         actions_layer: List[Dense] = []
         lifted_act_neurons: Dict[str, Dense] = {}
+        if DEBUG:
+            print(f"Action Layer {layer_num}\n")
         for act in actions:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             lifted_act_name: str = act[0]
@@ -270,7 +302,7 @@ class ASNet:
             act_neuron = act_neuron(lambda_layer)
 
             actions_layer.append(act_neuron)
-        act_layer = Concatenate(name=f"Acts{layer_num}")(actions_layer)
+        act_layer = Concatenate(name=f"Acts{layer_num}", trainable=False)(actions_layer)
         return act_layer
 
 
@@ -295,9 +327,11 @@ class ASNet:
                last_prop_layer, self.ground_actions, self.pred_indexed_relations, i
            )
 
-        return Model(
-            input_layer, Dense(len(self.ground_actions), activation=tf.nn.softmax, name=f"Out_{layer_num + 1}")(last_act_layer)
-        )
+        output_layer = Dense(
+            len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out"
+        )(last_act_layer)
+
+        return Model(input_layer, output_layer)
     
 
     def compile(self) -> None:
@@ -386,8 +420,10 @@ class ASNet:
 
 
 if __name__ == "__main__":
-    domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb3.pddl'
+    #domain = '../problems/deterministic_blocksworld/domain.pddl'
+    #problem = '../problems/deterministic_blocksworld/pb3.pddl'
+    domain = '../problems/blocksworld/domain.pddl'
+    problem = '../problems/blocksworld/5blocks.pddl'
 
     asnet = ASNet(domain, problem)
-    keras.utils.plot_model(asnet.model, "asnet1.jpg", show_shapes=True)
+    keras.utils.plot_model(asnet.model, "asnet2.jpg", show_shapes=True)
