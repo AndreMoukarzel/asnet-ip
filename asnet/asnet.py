@@ -34,8 +34,6 @@ class ASNet:
         self.parser.parse_domain(domain_file)
         self.parser.parse_problem(problem_file)
 
-        if DEBUG:
-            print("get ground actions")
         # Lists lifted actions and propositions
         act_relations, pred_relations = self.get_relations(self._get_ground_actions())
         self.ground_actions = [act for act in act_relations.keys()]
@@ -255,7 +253,7 @@ class ASNet:
             prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")
             prop_neuron.build(concat_pooled.shape)
 
-            # Weight sharing between prop neurons representing the same action with different predicates
+            # Weight sharing between prop neurons representing the same predicate
             if lifted_prop_name not in lifted_prop_neurons:
                 # First time prop was seen
                 lifted_prop_neurons[lifted_prop_name] = prop_neuron
@@ -327,6 +325,8 @@ class ASNet:
                last_prop_layer, self.ground_actions, self.pred_indexed_relations, i
            )
 
+        if DEBUG:
+            print("Building output layer")
         output_layer = Dense(
             len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out"
         )(last_act_layer)
@@ -420,10 +420,8 @@ class ASNet:
 
 
 if __name__ == "__main__":
-    #domain = '../problems/deterministic_blocksworld/domain.pddl'
-    #problem = '../problems/deterministic_blocksworld/pb3.pddl'
-    domain = '../problems/blocksworld/domain.pddl'
-    problem = '../problems/blocksworld/5blocks.pddl'
+    domain = '../problems/deterministic_blocksworld/domain.pddl'
+    problem = '../problems/deterministic_blocksworld/pb3.pddl'
 
     asnet = ASNet(domain, problem)
     keras.utils.plot_model(asnet.model, "asnet2.jpg", show_shapes=True)

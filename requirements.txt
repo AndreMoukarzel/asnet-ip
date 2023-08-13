@@ -1,0 +1,2 @@
+tensorflow==2.12.0
+ippddl-parser @ git+https://github.com/AndreMoukarzel/ippddl-parser
