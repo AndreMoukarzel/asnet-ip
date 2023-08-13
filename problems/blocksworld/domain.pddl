@@ -4,7 +4,7 @@
   (:predicates (holding ?b - block) (emptyhand) (on-table ?b - block) (on ?b1 ?b2 - block) (clear ?b - block))
   (:action pick-up
     :parameters (?b1 ?b2 - block)
-    :precondition (and (emptyhand) (clear ?b1) (on ?b1 ?b2))
+    :precondition (and (emptyhand) (clear ?b1) (on ?b1 ?b2) (not (equal ?b1 ?b2)))
     :effect
       (probabilistic
         3/4 (and (holding ?b1) (clear ?b2) (not (emptyhand)) (not (on ?b1 ?b2)))
@@ -29,13 +29,13 @@
   )
   (:action pick-tower
     :parameters (?b1 ?b2 ?b3 - block)
-    :precondition (and (emptyhand) (clear ?b1) (on ?b1 ?b2) (on ?b2 ?b3) (not (equal ?b1 ?b2)) (not (equal ?b2 ?b3)))
+    :precondition (and (emptyhand) (clear ?b1) (on ?b1 ?b2) (on ?b2 ?b3) (not (equal ?b1 ?b2)) (not (equal ?b2 ?b3)) (not (equal ?b1 ?b3)))
     :effect
       (probabilistic 1/10 (and (holding ?b2) (clear ?b3) (not (emptyhand)) (not (on ?b2 ?b3))))
   )
   (:action put-tower-on-block
     :parameters (?b1 ?b2 ?b3 - block)
-    :precondition (and (holding ?b2) (on ?b1 ?b2) (clear ?b3) (not (equal ?b1 ?b3)))
+    :precondition (and (holding ?b2) (on ?b1 ?b2) (clear ?b3) (not (equal ?b1 ?b2)) (not (equal ?b2 ?b3)) (not (equal ?b1 ?b3)))
     :effect (probabilistic 1/10 (and (on ?b2 ?b3) (emptyhand) (not (holding ?b2)) (not (clear ?b3)))
                            9/10 (and (on-table ?b2) (emptyhand) (not (holding ?b2))))
   )
