@@ -16,6 +16,8 @@ For such, we aim to implement a planner such as described in
 
 # Installation
 
+To install all required packages, run in the project's root folder: `pip install -r requirements`
+
 # Structure
 
 This repository is structured as follows:
