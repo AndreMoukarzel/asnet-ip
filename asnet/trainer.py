@@ -205,7 +205,7 @@ class Trainer:
         return states
 
 
-    def train(self, full_epochs: int = 50, train_epochs: int = 100):
+    def train(self, full_epochs: int = 50, train_epochs: int = 500):
         """Trains the instanced ASNet on the problem"""
 
         # Configures Early Stopping configuration for training
@@ -247,12 +247,13 @@ class Trainer:
 
 if __name__ == "__main__":
     domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb5.pddl'
+    problem = '../problems/deterministic_blocksworld/pb3.pddl'
+    problem2 = '../problems/deterministic_blocksworld/pb6.pddl'
     #domain = '../problems/blocksworld/domain.pddl'
     #problem = '../problems/blocksworld/5blocks.pddl'
 
     trainer = Trainer(domain, problem)
-    trainer.train(full_epochs=15, train_epochs=200)
+    trainer.train(full_epochs=500, train_epochs=1000)
     print("Executing a test policy with the Network")
     states, actions = trainer.run_policy(trainer.init_state)
     for i, act in enumerate(actions):
@@ -261,11 +262,12 @@ if __name__ == "__main__":
     print("State: ", states[-1])
 
     print("Getting lifted weights")
-    lifted_weights = get_lifted_weights(trainer.net)
+    lifted_weights = get_lifted_weights(trainer.net, pooling='mean')
     print("Applying lifted weights")
-    set_lifted_weights(trainer.net, lifted_weights)
+    new_trainer = Trainer(domain, problem2)
+    set_lifted_weights(new_trainer.net, lifted_weights)
     print("Executing new test policy")
-    states, actions = trainer.run_policy(trainer.init_state)
+    states, actions = new_trainer.run_policy(new_trainer.init_state)
     for i, act in enumerate(actions):
         print("State: ", states[i])
         print("Action taken: ", act)
