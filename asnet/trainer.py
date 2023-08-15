@@ -1,9 +1,9 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
-from asnet import ASNet
-from weight_transfer import get_lifted_weights, set_lifted_weights
+from .asnet import ASNet
 
 import numpy as np
+from tqdm import tqdm
 from tensorflow import keras
 from ippddl_parser.value_iteration import ValueIterator
 
@@ -142,7 +142,7 @@ class Trainer:
         return app_acts
 
 
-    def run_policy(self, initial_state: str, max_steps: int = 200) -> Tuple[List[str], List[tuple]]:
+    def run_policy(self, initial_state: str, max_steps: int = 200, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
         reached.
@@ -157,7 +157,7 @@ class Trainer:
         
         while not self.is_goal(curr_state) and len(app_actions) > 0:
             input_state: List[float] = self._state_to_input(curr_state)
-            action_probs: np.ndarray = model.predict((input_state,))[0]
+            action_probs: np.ndarray = model.predict((input_state,), verbose=verbose)[0]
             max_prob: float = action_probs.max()
             chosen_action_index = np.where(action_probs == max_prob)[0][0]
             chosen_action: tuple = self._index_to_action(chosen_action_index)
@@ -205,8 +205,11 @@ class Trainer:
         return states
 
 
-    def train(self, full_epochs: int = 50, train_epochs: int = 500):
-        """Trains the instanced ASNet on the problem"""
+    def train(self, full_epochs: int = 50, train_epochs: int = 500, verbose: int = 0) -> list:
+        """Trains the instanced ASNet on the problem
+        
+        Returns training history of all training iterations/full_epochs
+        """
 
         # Configures Early Stopping configuration for training
         callback = keras.callbacks.EarlyStopping(monitor='auc', patience=15, min_delta=0.001)
@@ -218,10 +221,10 @@ class Trainer:
         # Gets inputs and outputs to train the model
         states: List[str] = list(self.all_states)
         state_best_actions: List[tuple] = self._best_actions_by_state()
-
-        for _ in range(full_epochs):
+        histories: list = []
+        for _ in tqdm(range(full_epochs)):
             # Runs policy in search of states to be explored in training
-            explored_states: List[str] = self.run_policy(self.init_state)[0]
+            explored_states: List[str] = self.run_policy(self.init_state, verbose)[0]
             rollout_states: List[str] = []
             # Rollouts the teacher policy from each state found from the model's run,
             # to be certain that there will be optimal states in the training
@@ -237,38 +240,28 @@ class Trainer:
             converted_actions: List[List[float]] = [self._action_to_output(act_ind) for act_ind in correct_actions_indexes]
 
             minibatch_size: int = len(training_states)//2 # Hard-coded batch size to be half of training set
-            history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback])
+            history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+            histories.append(history)
 
             if history.history['auc'][-1] >= 0.99999:
                 # If the model is already extremely efficient in replicating the Teacher, we stop the training early
                 break
+        return histories
 
 
 
 if __name__ == "__main__":
     domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb3.pddl'
-    problem2 = '../problems/deterministic_blocksworld/pb6.pddl'
-    #domain = '../problems/blocksworld/domain.pddl'
-    #problem = '../problems/blocksworld/5blocks.pddl'
+    problem = '../problems/deterministic_blocksworld/pb5_p00.pddl'
 
     trainer = Trainer(domain, problem)
-    trainer.train(full_epochs=500, train_epochs=1000)
+    print("Training")
+    trainer.train(full_epochs=800, train_epochs=1000)
     print("Executing a test policy with the Network")
     states, actions = trainer.run_policy(trainer.init_state)
     for i, act in enumerate(actions):
         print("State: ", states[i])
         print("Action taken: ", act)
     print("State: ", states[-1])
-
-    print("Getting lifted weights")
-    lifted_weights = get_lifted_weights(trainer.net, pooling='mean')
-    print("Applying lifted weights")
-    new_trainer = Trainer(domain, problem2)
-    set_lifted_weights(new_trainer.net, lifted_weights)
-    print("Executing new test policy")
-    states, actions = new_trainer.run_policy(new_trainer.init_state)
-    for i, act in enumerate(actions):
-        print("State: ", states[i])
-        print("Action taken: ", act)
-    print("State: ", states[-1])
+    if trainer.is_goal(states[-1]):
+        print("GOAL REACHED")
