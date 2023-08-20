@@ -16,6 +16,8 @@ For such, we aim to implement a planner such as described in
 
 # Installation
 
+Installation instructions here
+
 # Structure
 
 This repository is structured as follows:
@@ -24,3 +26,30 @@ This repository is structured as follows:
   - Running `asnet.py` on its own will instance an ASNet for a small deterministic BlocksWorld problem.
   - Running `trainer.py` on its own will instance an ASNet for a small BlocksWorld problem, train it, display its chosen actions, transfer its weights for a new ASNet instance for a larger problem and display this new network's chosen actions.
 - `problems/` includes all problems that we used to train + test the network.
+
+
+# Execution
+
+Some classes from the package can be executed by calling them directly. In this cases, instructions for each are as below:
+
+
+### ASNet
+
+Executing this class by itself will simply try to instantiate an ASNet for the given domain and problem instance. Can
+be a good way to test if your domain or problem is correctly defined.
+
+```Shell
+cd asnet-ip
+python -B -m asnet.asnet
+```
+
+### Trainer
+
+Executing this class by itself will train an ASNet for the given domain in multiple problem instances. It takes a while.
+The weights and biases of the network are saved to the `data/` folder after training.
+
+```Shell
+cd asnet-ip
+python -B -m asnet.trainer
+```
+
