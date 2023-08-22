@@ -329,8 +329,7 @@ class ASNet:
         if DEBUG:
             print("Building output layer")
         output_layer = Dense(
-            len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out",
-            kernel_initializer=Ones(), bias_initializer=Zeros()
+            len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out"
         )(last_act_layer)
 
         return Model(input_layer, output_layer)
