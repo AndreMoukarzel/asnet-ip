@@ -1,4 +1,4 @@
-(define (problem pb5)
+(define (problem pb5_p00)
   (:domain blocksworld)
   (:objects a b c d e - block)
   (:init (onTable a) (onTable b) (onTable c) (onTable d) (onTable e)

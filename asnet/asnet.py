@@ -13,8 +13,9 @@ from ippddl_parser.parser import Parser
 from tensorflow import keras
 from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
 from tensorflow.keras.models import Model
+from tensorflow.keras.initializers import Ones, Zeros
 
-from relations import groundify_predicate, get_related_propositions
+from .relations import groundify_predicate, get_related_propositions
 
 
 DEBUG: bool = False
@@ -424,4 +425,4 @@ if __name__ == "__main__":
     problem = '../problems/deterministic_blocksworld/pb3.pddl'
 
     asnet = ASNet(domain, problem)
-    keras.utils.plot_model(asnet.model, "asnet2.jpg", show_shapes=True)
+    #keras.utils.plot_model(asnet.model, "asnet2.jpg", show_shapes=True)

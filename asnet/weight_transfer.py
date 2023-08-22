@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple
 
-from asnet import ASNet
+from .asnet import ASNet
 
 import numpy as np
 
