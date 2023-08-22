@@ -13,6 +13,7 @@ from ippddl_parser.parser import Parser
 from tensorflow import keras
 from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
 from tensorflow.keras.models import Model
+from tensorflow.keras.initializers import Ones, Zeros
 
 from .relations import groundify_predicate, get_related_propositions
 
@@ -328,7 +329,8 @@ class ASNet:
         if DEBUG:
             print("Building output layer")
         output_layer = Dense(
-            len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out"
+            len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out",
+            kernel_initializer=Ones(), bias_initializer=Zeros()
         )(last_act_layer)
 
         return Model(input_layer, output_layer)
