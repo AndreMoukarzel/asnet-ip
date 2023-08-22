@@ -16,7 +16,16 @@ For such, we aim to implement a planner such as described in
 
 # Installation
 
-Installation instructions here
+You may install this repository as a package locally with the following command:
+```Shell
+pip install git+https://github.com/AndreMoukarzel/asnet-ip.git
+```
+
+If you have already cloned the repository, you may also install your local clone as a package with:
+```Shell
+cd asnet-ip
+python install -e .
+```
 
 # Structure
 
