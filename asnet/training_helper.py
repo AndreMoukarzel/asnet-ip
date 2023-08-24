@@ -143,7 +143,7 @@ class TrainingHelper:
         return app_acts
 
 
-    def run_policy(self, initial_state: str, max_steps: int = 200, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
+    def run_policy(self, initial_state: str, max_steps: int = 100, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
         reached.
@@ -159,47 +159,6 @@ class TrainingHelper:
         while not self.is_goal(curr_state) and len(app_actions) > 0:
             input_state: List[float] = self._state_to_input(curr_state)
             action_probs: np.ndarray = model.predict((input_state,), verbose=verbose)[0]
-            max_prob: float = action_probs.max()
-            chosen_action_index = np.where(action_probs == max_prob)[0][0]
-            chosen_action: tuple = self._index_to_action(chosen_action_index)
-            actions.append(chosen_action)
-
-            # Applies chosen action to state, if applicable
-            action_applied: bool = False
-            for act in app_actions:
-                if (act.name, act.parameters) == chosen_action:
-                    action_applied = True
-                    curr_state = act.apply(curr_state)
-                    states.append(curr_state)
-                    app_actions = self.applicable_actions(curr_state)
-            if not action_applied or len(actions) >= max_steps:
-                return states, actions
-
-        return states, actions
-    
-
-    def run_valid_policy(self, initial_state: str, max_steps: int = 200, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
-        """Executes the ASNet's chosen VALID actions in the problem instance
-        until a terminal state is found or the number of maximum allowed steps
-        is reached.
-
-        Returns the list of encountered states and the list of taken actions
-        """
-        states: List[str] = [initial_state]
-        actions: List[tuple] = []
-        model = self.net.model
-        curr_state: str = initial_state
-        app_actions: list = self.applicable_actions(curr_state)
-        
-        while not self.is_goal(curr_state) and len(app_actions) > 0:
-            input_state: List[float] = self._state_to_input(curr_state)
-            action_probs: np.ndarray = model.predict((input_state,), verbose=verbose)[0]
-            # Creates masks where non-applicable actions have value 0.0 and applicable actions have value 1.0
-            app_actions_mask: List[float] = [0.0] * len(action_probs)
-            for act in app_actions:
-                app_act_index: int = self.net.ground_actions.index((act.name, act.parameters))
-                app_actions_mask[app_act_index] = 1.0
-            action_probs *= app_actions_mask
             max_prob: float = action_probs.max()
             chosen_action_index = np.where(action_probs == max_prob)[0][0]
             chosen_action: tuple = self._index_to_action(chosen_action_index)
