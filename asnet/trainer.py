@@ -43,10 +43,9 @@ class Trainer:
         return True
     
 
-    def train(self, full_epochs: int = 200, train_epochs: int = 500, verbose: int = 0) -> list:
+    def train(self, full_epochs: int = 500, train_epochs: int = 100, verbose: int = 0) -> list:
         """
         """
-
         # Configures Early Stopping configuration for training
         callback = EarlyStopping(monitor='auc', patience=20, min_delta=0.001)
 
@@ -54,24 +53,27 @@ class Trainer:
 
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
-        for _ in tqdm(range(full_epochs)):
-            for i, helper in enumerate(self.helpers):
-                converted_states, converted_actions = helper.generate_training_inputs(verbose=verbose)
-                minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
+        try:
+            for _ in tqdm(range(full_epochs)):
+                for i, helper in enumerate(self.helpers):
+                    converted_states, converted_actions = helper.generate_training_inputs(verbose=verbose)
+                    minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
 
-                helper.set_model_weights(shared_weights) # Overwrite model with the weights being trained
-                model = helper.net.get_model()
-                history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
-                histories[i].append(history)
-                shared_weights = helper.get_model_weights()
+                    helper.set_model_weights(shared_weights) # Overwrite model with the weights being trained
+                    model = helper.net.get_model()
+                    history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+                    histories[i].append(history)
+                    shared_weights = helper.get_model_weights()
 
-            # Custom Early Stopping
-            if self._check_planning_success(shared_weights):
-                consecutive_solved += 1
-                if consecutive_solved >= 20:
-                    break
-            else:
-                consecutive_solved = 0
+                # Custom Early Stopping
+                if self._check_planning_success(shared_weights):
+                    consecutive_solved += 1
+                    if consecutive_solved >= 20:
+                        break
+                else:
+                    consecutive_solved = 0
+        except KeyboardInterrupt:
+            pass
         return histories, shared_weights
 
 
@@ -96,5 +98,5 @@ if __name__ == "__main__":
     print("Training")
     _, weights = trainer.train(verbose=1)
 
-    with open('data/deterministic_blocksworld_weights.json', 'w') as f:
+    with open('data/new_output.json', 'w') as f:
         json.dump(weights, f, cls=NumpyEncoder)

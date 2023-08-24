@@ -57,9 +57,6 @@ def get_lifted_weights(asnet: ASNet, pooling: str='max') -> Dict[str, List[List[
     # Lifts actions and propositions and appends all found weights for pooling
     for layer_name, weights_and_biases in grounded_weights:
         lifted_name: str = get_lifted_layer_name(layer_name)
-
-        if "Out" in lifted_name: # We set the output layer to not be traineable, so we can ignore it
-            continue
         
         if lifted_name in lifted_weights:
             # If lifted object was already seen before, appends its weights for future pooling
