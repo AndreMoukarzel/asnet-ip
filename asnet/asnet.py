@@ -14,7 +14,7 @@ from tensorflow import keras
 from keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
 from keras.models import Model
 
-from .custom_layers import Output
+from .custom_layers import Output, ActionModule
 from .relations import groundify_predicate, get_related_propositions
 
 
@@ -283,12 +283,18 @@ class ASNet:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             lifted_act_name: str = act[0]
             related_prep_indexes: List[int] = pred_indexed_relations[act]
-
+            act_neuron = ActionModule(related_prep_indexes, name=f"{act_name}_{layer_num}")
+            
+            """
             lambda_layer = (
                 self._builds_connections_layer(prev_layer, related_prep_indexes, name=f"lambda_{act_name}_{layer_num}")
             ) # Only connects the proposition neuron to related actions
             act_neuron = Dense(1, name=f"{act_name}_{layer_num}")
+
             act_neuron.build(lambda_layer.shape)
+            """
+
+            act_neuron.build_weights()
 
             # Weight sharing between actions neurons representing the same action with different predicates
             if lifted_act_name not in lifted_act_neurons:
@@ -296,11 +302,11 @@ class ASNet:
                 lifted_act_neurons[lifted_act_name] = act_neuron
             else:
                 # Share weights with other actions of same type
-                self.share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)
+                self.share_layer_weights2(lifted_act_neurons[lifted_act_name], act_neuron)
             
-            act_neuron = act_neuron(lambda_layer)
+            #act_neuron = act_neuron(lambda_layer)
 
-            actions_layer.append(act_neuron)
+            actions_layer.append(act_neuron(prev_layer))
         act_layer = Concatenate(name=f"Acts{layer_num}", trainable=False)(actions_layer)
         return act_layer
 
@@ -419,6 +425,12 @@ class ASNet:
         layer2._trainable_weights = []
         layer2._trainable_weights.append(layer2.kernel)
         layer2._trainable_weights.append(layer2.bias)
+    
+
+    @staticmethod
+    def share_layer_weights2(layer1, layer2):
+        kernel, bias = layer1.get_traineable_weights()
+        layer2.set_traineable_weights(kernel, bias)
 
 
 if __name__ == "__main__":
