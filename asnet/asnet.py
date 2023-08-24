@@ -11,10 +11,10 @@ import itertools
 import tensorflow as tf
 from ippddl_parser.parser import Parser
 from tensorflow import keras
-from tensorflow.keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
-from tensorflow.keras.models import Model
-from tensorflow.keras.initializers import Ones, Zeros
+from keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
+from keras.models import Model
 
+from .custom_layers import Output
 from .relations import groundify_predicate, get_related_propositions
 
 
@@ -328,9 +328,10 @@ class ASNet:
 
         if DEBUG:
             print("Building output layer")
-        output_layer = Dense(
-            len(self.ground_actions), trainable=False, activation=tf.nn.softmax, name="Out"
-        )(last_act_layer)
+        
+        output_layer = Output(
+            input_action_sizes, trainable=False, name="Out"
+        )([last_act_layer, input_layer])
 
         return Model(input_layer, output_layer)
     
@@ -421,8 +422,8 @@ class ASNet:
 
 
 if __name__ == "__main__":
-    domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb3.pddl'
+    domain = 'problems/deterministic_blocksworld/domain.pddl'
+    problem = 'problems/deterministic_blocksworld/pb3.pddl'
 
     asnet = ASNet(domain, problem)
     #keras.utils.plot_model(asnet.model, "asnet2.jpg", show_shapes=True)
