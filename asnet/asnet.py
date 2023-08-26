@@ -14,7 +14,7 @@ from tensorflow import keras
 from keras.layers import Input, Lambda, Dense, Concatenate, Maximum, Reshape
 from keras.models import Model
 
-from .custom_layers import Output
+from .custom_layers import Output, ActionModule, PropositionModule
 from .relations import groundify_predicate, get_related_propositions
 
 
@@ -86,15 +86,6 @@ class ASNet:
         return indexed_dict
 
 
-    def _builds_connections_layer(self, layer, connection_indexes: List[int], name: str) -> Lambda:
-        """Returns an intermediary Lambda layer that receives all inputs from the
-        specified layer and outputs only the values of specified action_indexes.
-
-        Essentially serves as a mask to filter only outputs from desired actions.
-        """
-        return Lambda(lambda x: tf.gather(x, connection_indexes, axis=1), name=name, trainable=False)(layer)
-
-
     def _build_input_layer(self, actions, pred_indexed_relations):
         """Builds the specially formated input action layer
         """
@@ -111,62 +102,6 @@ class ASNet:
             action_sizes[act] = input_action_size
             input_len += input_action_size
         return Input(shape=(input_len,), name="Input"), action_sizes
-
-
-    def _build_first_propositions_layer(self, input_layer, input_action_sizes, propositions, act_indexed_relations, actions):
-        """Builds the proposition layer that connects to the input. Since the
-        input has a special format, this is slightly different than other
-        proposition layers.
-        """
-        layer_num: int = 1
-        propositions_layer: List[Dense] = []
-        lifted_prop_neurons: Dict[str, Dense] = {}
-        if DEBUG:
-            print("First Prop Layer\n")
-        for prop in propositions:
-            if DEBUG:
-                print(f"Building {prop} Layer")
-            lifted_prop_name: str = prop[0]
-            related_actions_indexes: List[int] = act_indexed_relations[prop]
-            if DEBUG:
-                print("\tGetting related")
-            related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
-            if DEBUG:
-                print("\tDone getting related")
-
-            pooled_layers: list = []
-            for i, preds in enumerate(related_predicates):
-                # Pools related predicates into single values before adding them as input
-                if len(preds) > 1:
-                    transformed_pred_indexes: List[int] = self.action_indexes_to_input(preds, actions, input_action_sizes)
-                    pooled_layers.append(
-                        self._pool_related_predicates(input_layer, transformed_pred_indexes, name=f"pooled_{'_'.join(prop)}_{i}_{layer_num}")
-                    )
-            # Gathers all propositions with no relation to others into a single Lambda layer
-            solo_preds: List[int] = self.unify_solo_elements(related_predicates)
-            transformed_solo_indexes: List[int] = self.action_indexes_to_input(solo_preds, actions, input_action_sizes)
-            solo_lambda = self._builds_connections_layer(input_layer, transformed_solo_indexes, name=f"solo_{'_'.join(prop)}_{layer_num}")
-            pooled_layers.append(solo_lambda)
-
-            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}", trainable=False)(pooled_layers)
-
-            # Creates a neuron representing a single proposition from the proposition layer
-            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")
-            prop_neuron.build(concat_pooled.shape)
-
-            # Weight sharing between prop neurons representing the same action with different predicates
-            if lifted_prop_name not in lifted_prop_neurons:
-                # First time prop was seen
-                lifted_prop_neurons[lifted_prop_name] = prop_neuron
-            else:
-                # Share weights with other prop of same type
-                self.share_layer_weights(lifted_prop_neurons[lifted_prop_name], prop_neuron)
-            
-            prop_neuron = prop_neuron(concat_pooled)
-            propositions_layer.append(prop_neuron)
-        # Concatenate all proposition neurons into a single layer
-        prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
-        return prop_layer
     
 
     def _get_related_predicates(self, related_action_indexes) -> List[List[int]]:
@@ -208,21 +143,56 @@ class ASNet:
         return related_predicates
 
 
-    def _pool_related_predicates(self, prev_layer, related_predicates, name: str) -> Reshape:
-        """Pools maximum value of propositions with related predicates into a
-        a single output
+    def _build_first_propositions_layer(self, input_layer, input_action_sizes, propositions, act_indexed_relations, actions):
+        """Builds the proposition layer that connects to the input. Since the
+        input has a special format, this is slightly different than other
+        proposition layers.
         """
-        lambda_layers = []
-        for pred in related_predicates:
-            lambda_layers.append(Lambda(lambda x: tf.gather(x, pred, axis=1), trainable=False)(prev_layer))
-        return Reshape([1], trainable=False)(Maximum(name=name, trainable=False)(lambda_layers))
+        layer_num: int = 1
+        propositions_layer: List[Dense] = []
+        lifted_prop_modules: Dict[str, Dense] = {}
+        if DEBUG:
+            print("First Prop Layer\n")
+        for prop in propositions:
+            if DEBUG:
+                print(f"Building {prop} Layer")
+            lifted_prop_name: str = prop[0]
+            related_actions_indexes: List[int] = act_indexed_relations[prop]
+            if DEBUG:
+                print("\tGetting related")
+            related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
+            if DEBUG:
+                print("\tDone getting related")
+            
+            related_connections: List[List[int]] = self.only_grouped_elements(related_predicates)
+            transformed_related_connections: List[List[int]] = [self.action_indexes_to_input(conn, actions, input_action_sizes) for conn in related_connections]
+            # Gathers all propositions with no relation to others into a single Lambda layer
+            unrelated_connections: List[int] = self.unify_solo_elements(related_predicates)
+            transformed_unrelated_connections: List[int] = self.action_indexes_to_input(unrelated_connections, actions, input_action_sizes)
+
+            prop_module = PropositionModule(transformed_related_connections, transformed_unrelated_connections, name=f"{'_'.join(prop)}_{layer_num}")
+            prop_module.build_weights()
+
+            # Weight sharing between prop neurons representing the same action with different predicates
+            if lifted_prop_name not in lifted_prop_modules:
+                # First time prop was seen
+                lifted_prop_modules[lifted_prop_name] = prop_module
+            else:
+                # Share weights with other prop of same type
+                self.share_layer_weights(lifted_prop_modules[lifted_prop_name], prop_module)
+
+            #propositions_layer.append(prop_module(input_layer))
+            propositions_layer.append(prop_module(input_layer))
+        # Concatenate all proposition neurons into a single layer
+        prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
+        return prop_layer
 
 
     def _build_propositions_layer(self, prev_layer, propositions, act_indexed_relations, layer_num: int) -> Concatenate:
         """Builds a proposition layer.
         """
         propositions_layer: List[Dense] = []
-        lifted_prop_neurons: Dict[str, Dense] = {}
+        lifted_prop_modules: Dict[str, Dense] = {}
         if DEBUG:
             print(f"Prop Layer {layer_num}\n")
         for prop in propositions:
@@ -236,34 +206,22 @@ class ASNet:
             if DEBUG:
                 print("\tDone getting related")
 
-            pooled_layers: list = []
-            for i, preds in enumerate(related_predicates):
-                # Pools related predicates into single values before adding them as input
-                if len(preds) > 1:
-                    pooled_layers.append(
-                        self._pool_related_predicates(prev_layer, preds, name=f"pooled_{'_'.join(prop)}_{i}_{layer_num}")
-                    )
-            # Gathers all propositions with no relation to others into a single Lambda layer
-            solo_preds: List[int] = self.unify_solo_elements(related_predicates)
-            solo_lambda = self._builds_connections_layer(prev_layer, solo_preds, name=f"solo_{'_'.join(prop)}_{layer_num}")
-            pooled_layers.append(solo_lambda)
+            related_connections: List[List[int]] = self.only_grouped_elements(related_predicates)
+            unrelated_connections: List[int] = self.unify_solo_elements(related_predicates)
 
-            concat_pooled = Concatenate(name=f"concat_{'_'.join(prop)}_{layer_num}", trainable=False)(pooled_layers)
-
-            # Creates a neuron representing a single proposition from the proposition layer
-            prop_neuron = Dense(1, name=f"{'_'.join(prop)}_{layer_num}")
-            prop_neuron.build(concat_pooled.shape)
+            prop_module = PropositionModule(related_connections, unrelated_connections, name=f"{'_'.join(prop)}_{layer_num}")
+            prop_module.build_weights()
 
             # Weight sharing between prop neurons representing the same predicate
-            if lifted_prop_name not in lifted_prop_neurons:
+            if lifted_prop_name not in lifted_prop_modules:
                 # First time prop was seen
-                lifted_prop_neurons[lifted_prop_name] = prop_neuron
+                lifted_prop_modules[lifted_prop_name] = prop_module
             else:
                 # Share weights with other prop of same type
-                self.share_layer_weights(lifted_prop_neurons[lifted_prop_name], prop_neuron)
+                self.share_layer_weights(lifted_prop_modules[lifted_prop_name], prop_module)
             
-            prop_neuron = prop_neuron(concat_pooled)
-            propositions_layer.append(prop_neuron)
+            propositions_layer.append(prop_module(prev_layer))
+                
         # Concatenate all proposition neurons into a single layer
         prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
         return prop_layer
@@ -283,12 +241,8 @@ class ASNet:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             lifted_act_name: str = act[0]
             related_prep_indexes: List[int] = pred_indexed_relations[act]
-
-            lambda_layer = (
-                self._builds_connections_layer(prev_layer, related_prep_indexes, name=f"lambda_{act_name}_{layer_num}")
-            ) # Only connects the proposition neuron to related actions
-            act_neuron = Dense(1, name=f"{act_name}_{layer_num}")
-            act_neuron.build(lambda_layer.shape)
+            act_neuron = ActionModule(related_prep_indexes, name=f"{act_name}_{layer_num}")
+            act_neuron.build_weights()
 
             # Weight sharing between actions neurons representing the same action with different predicates
             if lifted_act_name not in lifted_act_neurons:
@@ -297,10 +251,8 @@ class ASNet:
             else:
                 # Share weights with other actions of same type
                 self.share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)
-            
-            act_neuron = act_neuron(lambda_layer)
 
-            actions_layer.append(act_neuron)
+            actions_layer.append(act_neuron(prev_layer))
         act_layer = Concatenate(name=f"Acts{layer_num}", trainable=False)(actions_layer)
         return act_layer
 
@@ -413,12 +365,19 @@ class ASNet:
     
 
     @staticmethod
+    def only_grouped_elements(all_elements: List[list]) -> List[List[int]]:
+        """Given a list of lists, returns all elements with length larger than 1"""
+        grouped_elements: List[List[int]] = []
+        for elements in all_elements:
+            if len(elements) > 1:
+                grouped_elements.append(elements)
+        return grouped_elements
+    
+
+    @staticmethod
     def share_layer_weights(layer1, layer2):
-        layer2.kernel = layer1.kernel
-        layer2.bias = layer1.bias
-        layer2._trainable_weights = []
-        layer2._trainable_weights.append(layer2.kernel)
-        layer2._trainable_weights.append(layer2.bias)
+        kernel, bias = layer1.get_trainable_weights()
+        layer2.set_trainable_weights(kernel, bias)
 
 
 if __name__ == "__main__":
@@ -426,4 +385,4 @@ if __name__ == "__main__":
     problem = 'problems/deterministic_blocksworld/pb3.pddl'
 
     asnet = ASNet(domain, problem)
-    #keras.utils.plot_model(asnet.model, "asnet2.jpg", show_shapes=True)
+    #keras.utils.plot_model(asnet.model, "asnet.jpg", show_shapes=True)
