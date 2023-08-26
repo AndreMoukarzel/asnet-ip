@@ -65,3 +65,95 @@ class ActionModule(Layer):
         self.neuron._trainable_weights = []
         self.neuron._trainable_weights.append(kernel)
         self.neuron._trainable_weights.append(bias)
+
+
+class ActionModule(Layer):
+    """Action Module representing a single action from an action layer from an
+    ASNet.
+    """
+    def __init__(self, related_prep_indexes: List[int], **kwargs):
+        super(ActionModule, self).__init__(**kwargs)
+        self.filter_shape = (None, len(related_prep_indexes))
+        self.filter = build_connections_layer(related_prep_indexes)
+        self.neuron = Dense(1)
+
+    def call(self, input):
+        x = self.filter(input)
+        return self.neuron(x)
+
+    def build_weights(self):
+        self.neuron.build(self.filter_shape)
+
+    def get_trainable_weights(self) -> tuple:
+        return self.neuron.kernel, self.neuron.bias
+    
+    def set_trainable_weights(self, kernel, bias) -> tuple:
+        self.neuron.kernel = kernel
+        self.neuron.bias = bias
+        self.neuron._trainable_weights = []
+        self.neuron._trainable_weights = [kernel, bias]
+
+
+class PropositionModule(Layer):
+    """Proposition Module representing a single proposition from a propostiion
+    layer from an ASNet.
+    """
+    def __init__(self, related_connections: List[List[int]], unrelated_connections: List[int], **kwargs):
+        super(PropositionModule, self).__init__(**kwargs)
+        #unrelated_connections: List[int] = self.unify_solo_elements(predicate_relations)
+        #related_connections: List[List[int]] = self.only_grouped_elements(predicate_relations)
+        self.pooling_filters: List[Lambda] = []
+        for connections in related_connections:
+            # When multiple predicates are related, we pool them into a single value with max pooling
+            self.pooling_filters.append(build_connections_layer(connections))
+        self.solo_filter = build_connections_layer(unrelated_connections) # We also filter out all relevant predicates with no relations to others
+        self.concat_shape = (None, len(related_connections) + len(unrelated_connections))
+        self.neuron = Dense(1)
+
+    def call(self, input):
+        pooled_inputs: list = []
+
+        for filter_layer in self.pooling_filters:
+            """Pools maximum value of propositions with related predicates into a
+            a single output
+            """
+            pool = filter_layer(input)
+            pool = K.max(pool, axis=-1)
+            pool = tf.convert_to_tensor(pool)
+            pool = tf.reshape(pool, (-1, 1))
+
+            pooled_inputs.append(pool)
+        
+        pooled_inputs.append(self.solo_filter(input))
+        x = tf.concat(pooled_inputs, axis=-1)
+        return self.neuron(x)
+
+    def build_weights(self):
+        self.neuron.build(self.concat_shape)
+
+    def get_trainable_weights(self) -> tuple:
+        return self.neuron.kernel, self.neuron.bias
+    
+    def set_trainable_weights(self, kernel, bias) -> tuple:
+        self.neuron.kernel = kernel
+        self.neuron.bias = bias
+        self.neuron._trainable_weights = [kernel, bias]
+    
+    @staticmethod
+    def unify_solo_elements(all_elements: List[list]) -> List[int]:
+        """Given a list of lists, returns the concatenation of all
+        single-element lists."""
+        solo_elements: List[int] = []
+        for elements in all_elements:
+            if len(elements) == 1:
+                solo_elements.append(elements[0])
+        return solo_elements
+
+    @staticmethod
+    def only_grouped_elements(all_elements: List[list]) -> List[List[int]]:
+        """Given a list of lists, returns all elements with length larger than 1"""
+        grouped_elements: List[List[int]] = []
+        for elements in all_elements:
+            if len(elements) > 1:
+                grouped_elements.append(elements)
+        return grouped_elements
