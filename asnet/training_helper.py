@@ -143,7 +143,7 @@ class TrainingHelper:
         return app_acts
 
 
-    def run_policy(self, initial_state: str, max_steps: int = 100, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
+    def run_policy(self, initial_state: str, max_steps: int = 50, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
         reached.
