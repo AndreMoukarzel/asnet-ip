@@ -100,8 +100,6 @@ class PropositionModule(Layer):
     """
     def __init__(self, related_connections: List[List[int]], unrelated_connections: List[int], **kwargs):
         super(PropositionModule, self).__init__(**kwargs)
-        #unrelated_connections: List[int] = self.unify_solo_elements(predicate_relations)
-        #related_connections: List[List[int]] = self.only_grouped_elements(predicate_relations)
         self.pooling_filters: List[Lambda] = []
         for connections in related_connections:
             # When multiple predicates are related, we pool them into a single value with max pooling
@@ -138,22 +136,3 @@ class PropositionModule(Layer):
         self.neuron.kernel = kernel
         self.neuron.bias = bias
         self.neuron._trainable_weights = [kernel, bias]
-    
-    @staticmethod
-    def unify_solo_elements(all_elements: List[list]) -> List[int]:
-        """Given a list of lists, returns the concatenation of all
-        single-element lists."""
-        solo_elements: List[int] = []
-        for elements in all_elements:
-            if len(elements) == 1:
-                solo_elements.append(elements[0])
-        return solo_elements
-
-    @staticmethod
-    def only_grouped_elements(all_elements: List[list]) -> List[List[int]]:
-        """Given a list of lists, returns all elements with length larger than 1"""
-        grouped_elements: List[List[int]] = []
-        for elements in all_elements:
-            if len(elements) > 1:
-                grouped_elements.append(elements)
-        return grouped_elements
