@@ -1,3 +1,4 @@
+"""Contains custom layers used in building an ASNet """
 from typing import List
 
 import tensorflow as tf
@@ -10,12 +11,23 @@ def build_connections_layer(relevant_indexes: List[int]) -> Lambda:
         previous layer and outputs only the values in specified relevant_indexes.
 
         Essentially serves as a mask to filter only the desired outputs from a layer.
+
+        Parameters
+        ----------
+        relevant_indexes: List[int]
+            List of the positions, or indexes, of outputs to be filtered and 
+            passed through the created Lambda layer.
         """
         return Lambda(lambda x: tf.gather(x, relevant_indexes, axis=1), trainable=False)
 
 
 class Output(Layer):
-    """Output layer for an ASNet.
+    """
+    Output Layer of an ASNet.
+
+    This layer outputs the probabilities of each of the VALID actions being
+    chosen given the received proposition values received by the previous
+    Proposition layer, composed of the concatenation of PropositionModules.
     """
     def __init__(self, input_action_sizes: List[int], **kwargs):
         super(Output, self).__init__(**kwargs)
@@ -40,36 +52,18 @@ class Output(Layer):
 
 
 class ActionModule(Layer):
-    """Action Module representing a single action from an action layer from an
-    ASNet.
     """
-    def __init__(self, related_prep_indexes: List[int], **kwargs):
-        super(ActionModule, self).__init__(**kwargs)
-        self.filter_shape = (None, len(related_prep_indexes))
-        self.filter = build_connections_layer(related_prep_indexes)
-        self.neuron = Dense(1)
+    Action Module representing a single action from an Action Layer in an ASNet.
 
-    def call(self, input):
-        x = self.filter(input)
-        return self.neuron(x)
-
-    def build_weights(self):
-        self.neuron.build(self.filter_shape)
-
-    def get_traineable_weights(self) -> tuple:
-        return self.neuron.kernel, self.neuron.bias
-    
-    def set_traineable_weights(self, kernel, bias) -> tuple:
-        self.neuron.kernel = kernel
-        self.neuron.bias = bias
-        self.neuron._trainable_weights = []
-        self.neuron._trainable_weights.append(kernel)
-        self.neuron._trainable_weights.append(bias)
-
-
-class ActionModule(Layer):
-    """Action Module representing a single action from an action layer from an
-    ASNet.
+    Methods
+    -------
+    build_weights()
+        Builds the layers weights, so its kernel and biases can be transfered
+        to other Action Modules of the same format.
+    get_trainable_weights()
+        Returns the kernel and bias of the ActionModule
+    set_trainable_weights(kernel, bias)
+        Overwrides the kernel and bias of the ActionModule
     """
     def __init__(self, related_prep_indexes: List[int], **kwargs):
         super(ActionModule, self).__init__(**kwargs)
@@ -88,15 +82,34 @@ class ActionModule(Layer):
         return self.neuron.kernel, self.neuron.bias
     
     def set_trainable_weights(self, kernel, bias) -> tuple:
+        """
+        Overwrides the kernel and bias of the ActionModule.
+
+        Also ensures that this ActionModule's weights and biases are shared with
+        the original kernel and bias, forcing any training that affects this
+        module to also reflect in the values of the original.
+        """
         self.neuron.kernel = kernel
         self.neuron.bias = bias
         self.neuron._trainable_weights = []
         self.neuron._trainable_weights = [kernel, bias]
 
 
+
 class PropositionModule(Layer):
-    """Proposition Module representing a single proposition from a propostiion
-    layer from an ASNet.
+    """
+    Proposition Module representing a single proposition from an Proposition
+    Layer in an ASNet.
+
+    Methods
+    -------
+    build_weights()
+        Builds the layers weights, so its kernel and biases can be transfered
+        to other Action Modules of the same format.
+    get_trainable_weights()
+        Returns the kernel and bias of the PropositionModule
+    set_trainable_weights(kernel, bias)
+        Overwrides the kernel and bias of the PropositionModule
     """
     def __init__(self, related_connections: List[List[int]], unrelated_connections: List[int], **kwargs):
         super(PropositionModule, self).__init__(**kwargs)
@@ -112,9 +125,7 @@ class PropositionModule(Layer):
         pooled_inputs: list = []
 
         for filter_layer in self.pooling_filters:
-            """Pools maximum value of propositions with related predicates into a
-            a single output
-            """
+            # Pools maximum value of propositions with related predicates into a single output
             pool = filter_layer(input)
             pool = K.max(pool, axis=-1)
             pool = tf.convert_to_tensor(pool)
@@ -133,6 +144,13 @@ class PropositionModule(Layer):
         return self.neuron.kernel, self.neuron.bias
     
     def set_trainable_weights(self, kernel, bias) -> tuple:
+        """
+        Overwrides the kernel and bias of the PropositionModule.
+
+        Also ensures that this PropositionModule's weights and biases are shared
+        with the original kernel and bias, forcing any training that affects this
+        module to also reflect in the values of the original.
+        """
         self.neuron.kernel = kernel
         self.neuron.bias = bias
         self.neuron._trainable_weights = [kernel, bias]
