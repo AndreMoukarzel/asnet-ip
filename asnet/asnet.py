@@ -5,6 +5,7 @@ All other layers, such as the Lambda and Concatenate layers, are used simply to
 make sure the action and proposition layers have the appropriate format to have
 shareable weights.
 """
+import logging
 from typing import List, Dict, Tuple
 import itertools
 
@@ -16,9 +17,6 @@ import click
 
 from .custom_layers import Output, ActionModule, PropositionModule
 from .relations import get_related_propositions
-
-
-DEBUG: bool = False
 
 
 
@@ -52,11 +50,12 @@ class ASNet:
         problem_file : str
             IPPDDL file specifying the problem instance
         """
+        logging.info(f"Building ASNet based on:\n\tDomain: {domain_file}\n\tProblem: {problem_file}")
         self.domain: str = domain_file
         self.problem: str = problem_file
         self.parser: Parser = Parser()
-        if DEBUG:
-            print("Building parser")
+
+        logging.debug("Building parser")
         self.parser.scan_tokens(domain_file)
         self.parser.scan_tokens(problem_file)
         self.parser.parse_domain(domain_file)
@@ -236,18 +235,14 @@ class ASNet:
         layer_num: int = 1
         propositions_layer: List[Dense] = []
         lifted_prop_modules: Dict[str, Dense] = {}
-        if DEBUG:
-            print("First Prop Layer\n")
+        logging.debug("First Prop Layer\n")
         for prop in self.propositions:
-            if DEBUG:
-                print(f"Building {prop} Layer")
+            logging.debug(f"Building {prop} 's PropositionModule")
             lifted_prop_name: str = prop[0]
             related_actions_indexes: List[int] = self.related_act_indexes[prop]
-            if DEBUG:
-                print("\tGetting related")
+            logging.debug("\tGetting related predicates")
             related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
-            if DEBUG:
-                print("\tDone getting related")
+            logging.debug("\tDone getting related")
             
             related_connections: List[List[int]] = get_grouped_elements(related_predicates)
             transformed_related_connections: List[List[int]] = [self.action_indexes_to_input(conn, self.ground_actions, input_action_sizes) for conn in related_connections]
@@ -296,18 +291,14 @@ class ASNet:
         """
         propositions_layer: List[Dense] = []
         lifted_prop_modules: Dict[str, Dense] = {}
-        if DEBUG:
-            print(f"Prop Layer {layer_num}\n")
+        logging.debug(f"Prop Layer {layer_num}\n")
         for prop in self.propositions:
-            if DEBUG:
-                print(f"Building {prop} Layer")
+            logging.debug(f"Building {prop} 's PropositionModule")
             lifted_prop_name: str = prop[0]
             related_actions_indexes: List[int] = self.related_act_indexes[prop]
-            if DEBUG:
-                print("\tGetting related")
+            logging.debug("\tGetting related predicates")
             related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
-            if DEBUG:
-                print("\tDone getting related")
+            logging.debug("\tDone getting related")
 
             related_connections: List[List[int]] = get_grouped_elements(related_predicates)
             unrelated_connections: List[int] = get_solo_elements(related_predicates)
@@ -354,12 +345,12 @@ class ASNet:
         """
         actions_layer: List[Dense] = []
         lifted_act_neurons: Dict[str, Dense] = {}
-        if DEBUG:
-            print(f"Action Layer {layer_num}\n")
+        logging.debug(f"Action Layer {layer_num}")
         for act in self.ground_actions:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             lifted_act_name: str = act[0]
             related_prop_indexes: List[int] = self.related_prop_indexes[act]
+            logging.debug(f"Building {act_name} 's ActionModule")
             act_neuron = ActionModule(related_prop_indexes, name=f"{act_name}_{layer_num}")
             act_neuron.build_weights()
 
@@ -408,12 +399,11 @@ class ASNet:
            last_prop_layer = self._build_propositions_layer(last_act_layer, i)
            last_act_layer = self._build_actions_layer(last_prop_layer, i)
 
-        if DEBUG:
-            print("Building output layer")
-        
+        logging.debug("Building output layer")
         output_layer = Output(
             input_action_sizes, trainable=False, name="Out"
         )([last_act_layer, input_layer])
+        logging.debug("Done building ASNet")
 
         return Model(input_layer, output_layer)
     
@@ -553,9 +543,16 @@ def share_layer_weights(layer1, layer2) -> None:
 @click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/deterministic_blocksworld/domain.pddl')
 @click.option("--problem", "-p", type=str, help="Path to a problem's instance PPDDL file.", default='problems/deterministic_blocksworld/pb3.pddl')
 @click.option("--image_name", "-img", type=str, help="Save path of the ASNet plot. By default does not save a plot.", default='')
-def execute(domain, problem, image_name: str=None):
+@click.option("--debug", is_flag=True, help="Debug prints. Off by default.")
+def execute(domain, problem, image_name: str, debug: bool):
+    if debug:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s %(message)s"
+        )
+
     asnet = ASNet(domain, problem)
-    if image_name:
+    if image_name != '':
         keras.utils.plot_model(asnet.model, image_name, show_shapes=True)
 
 
