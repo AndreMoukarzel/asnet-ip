@@ -52,6 +52,15 @@ cd asnet-ip
 python -B -m asnet.asnet
 ```
 
+It is possible to specify different problem domains with `--domain`/`-d` argument, different instances with the `--problem`/`-p` argument and you may even save an image representing the
+constructed ASNet by specifying the image's save path with `--image_name`/`-img`, such as demonstrated below:
+
+```Shell
+cd asnet-ip
+python -B -m asnet.asnet -d problems/deterministic_blocksworld/domain.pddl -p problems/deterministic_blocksworld/pb6.pddl --image_name asnet.jpg
+```
+
+
 ### Trainer
 
 Executing this class by itself will train an ASNet for the given domain in multiple problem instances. It takes a while.

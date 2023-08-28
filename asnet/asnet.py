@@ -12,6 +12,7 @@ from ippddl_parser.parser import Parser
 from tensorflow import keras
 from keras.layers import Input, Dense, Concatenate
 from keras.models import Model
+import click
 
 from .custom_layers import Output, ActionModule, PropositionModule
 from .relations import get_related_propositions
@@ -510,6 +511,7 @@ class ASNet:
 
 #################################################### HELPER METHODS ####################################################
 
+
 def get_solo_elements(all_elements: List[list]) -> list:
     """Given a list of lists, returns the concatenation of all
     single-element lists."""
@@ -547,9 +549,15 @@ def share_layer_weights(layer1, layer2) -> None:
 
 
 
-if __name__ == "__main__":
-    domain = 'problems/deterministic_blocksworld/domain.pddl'
-    problem = 'problems/deterministic_blocksworld/pb3.pddl'
-
+@click.command()
+@click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/deterministic_blocksworld/domain.pddl')
+@click.option("--problem", "-p", type=str, help="Path to a problem's instance PPDDL file.", default='problems/deterministic_blocksworld/pb3.pddl')
+@click.option("--image_name", "-img", type=str, help="Save path of the ASNet plot. By default does not save a plot.", default='')
+def execute(domain, problem, image_name: str=None):
     asnet = ASNet(domain, problem)
-    #keras.utils.plot_model(asnet.model, "asnet.jpg", show_shapes=True)
+    if image_name:
+        keras.utils.plot_model(asnet.model, image_name, show_shapes=True)
+
+
+if __name__ == "__main__":
+    execute()
