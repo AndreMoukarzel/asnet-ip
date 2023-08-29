@@ -1,4 +1,5 @@
 from itertools import product
+from typing import Set, List, Tuple
 
 
 def groundify_predicate(pred, objects):
@@ -20,35 +21,32 @@ def groundify_predicate(pred, objects):
         yield([pred.name, assignment])
 
 
-def get_related_predicates(action) -> set:
-        """Returns the predicates related to the action.
-        """
-        all_predicates = []
-        for pred in action.positive_preconditions:
-            all_predicates.append(pred[0])
-        for pred in action.negative_preconditions:
-            all_predicates.append(pred[0])
-        for prop_effect in action.add_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred[0])
-        for prop_effect in action.del_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred[0])
-        return set(all_predicates)
+def get_related_propositions(action) -> Set[Tuple[str]]:
+    """Returns all propositions (predicates and their objects) related to
+    the action.
+    
+    Parameters
+    ----------
+    action: ippddl_parser.Action
+        Action instance with its defined preconditions and effects.
 
+    Returns
+    -------
+    Set[Tuple[str]]
+        Set with all propositions related to the action represented as tuples
+        of format (proposition_name, object1, object2, ...).
 
-def get_related_propositions(action) -> set:
-        """Returns the propositions (predicates and their objects) related to
-        the action."""
-        all_predicates = []
-        for pred in action.positive_preconditions:
+        E.g. ('on', 'a', 'b')
+    """
+    all_predicates: List[Tuple[str]] = []
+    for pred in action.positive_preconditions:
+        all_predicates.append(pred)
+    for pred in action.negative_preconditions:
+        all_predicates.append(pred)
+    for prop_effect in action.add_effects:
+        for pred in prop_effect:
             all_predicates.append(pred)
-        for pred in action.negative_preconditions:
+    for prop_effect in action.del_effects:
+        for pred in prop_effect:
             all_predicates.append(pred)
-        for prop_effect in action.add_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred)
-        for prop_effect in action.del_effects:
-            for pred in prop_effect:
-                all_predicates.append(pred)
-        return set(all_predicates)
+    return set(all_predicates)
