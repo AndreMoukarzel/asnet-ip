@@ -31,14 +31,26 @@ class ASNet:
     Methods
     -------
     compile()
-        Compiles the ASNet for training
+        Compiles the ASNet for training.
+    
+    get_ground_actions()
+        Returns the problem instance's grounded actions.
+    
+    get_related_act_indexes()
+        Returns the action indexes related to each proposition.
+    
+    get_related_prop_indexes()
+        Returns the proposition indexes related to each action.
+
     get_model()
+        Returns the ASNet neural network.
 
     get_relations(actions)
         Returns all propositions related to each action and all actions related
-        to each propositions
+        to each propositions.
+
     action_indexes_to_input(related_actions_indexes, actions, input_action_sizes)
-        Converts action indexes to equivalent indexes from the input layer
+        Converts action indexes to equivalent indexes from the input layer.
     """
 
     def __init__(self, domain_file: str, problem_file: str) -> None:
@@ -424,6 +436,31 @@ class ASNet:
                 'AUC'
             ]
         )
+    
+
+    def get_ground_actions(self) -> List[Tuple[str]]:
+        """Returns a list with the problem instance's grounded actions"""
+        return self.ground_actions
+    
+
+    def get_related_act_indexes(self) -> Dict[Tuple[str], List[int]]:
+        """Returns a dictionary with, for each of the problem's propositions,
+        the index in 'ground_actions' of actions related to it.
+
+        The action's indexes, consequently, are equivalent to the ActionModule's
+        positions in an Action Layer of the network.
+        """
+        return self.related_act_indexes
+    
+
+    def get_related_prop_indexes(self) -> Dict[Tuple[str], List[int]]:
+        """Returns a dictionary with, for each of the problem's actions,
+        the index in 'propositions' of propositions related to it.
+
+        The propositions' indexes, consequently, are equivalent to the
+        PropositionModule's  positions in a Proposition Layer of the network.
+        """
+        return self.related_prop_indexes
     
 
     def get_model(self) -> Model:

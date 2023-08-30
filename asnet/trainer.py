@@ -14,13 +14,10 @@ class Trainer:
         self.helpers: List[TrainingHelper] = []
         for prob_file in problem_files:
             helper = TrainingHelper(domain_file, prob_file) 
-            helper.net.compile()
             self.helpers.append(helper)
         
-
         if validation_problem_file:
             self.val_helper = TrainingHelper(domain_file, validation_problem_file)
-            self.val_helper.net.compile()
     
 
     def _check_planning_success(self, shared_weights) -> bool:
@@ -43,11 +40,11 @@ class Trainer:
         return True
     
 
-    def train(self, full_epochs: int = 500, train_epochs: int = 100, verbose: int = 0) -> list:
+    def train(self, full_epochs: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
         """
         """
         # Configures Early Stopping configuration for training
-        callback = EarlyStopping(monitor='auc', patience=20, min_delta=0.001)
+        #callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
 
         shared_weights = self.helpers[0].get_model_weights()
 
@@ -61,7 +58,8 @@ class Trainer:
 
                     helper.set_model_weights(shared_weights) # Overwrite model with the weights being trained
                     model = helper.net.get_model()
-                    history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+                    #history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+                    history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, verbose=verbose)
                     histories[i].append(history)
                     shared_weights = helper.get_model_weights()
 
@@ -69,6 +67,7 @@ class Trainer:
                 if self._check_planning_success(shared_weights):
                     consecutive_solved += 1
                     if consecutive_solved >= 20:
+                        print(f"Reached goal in {20} consecutive iterations.")
                         break
                 else:
                     consecutive_solved = 0
@@ -85,6 +84,7 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 if __name__ == "__main__":
+    """
     domain = 'problems/deterministic_blocksworld/domain.pddl'
     problems = [
         'problems/deterministic_blocksworld/pb5_p00.pddl',
@@ -98,5 +98,27 @@ if __name__ == "__main__":
     print("Training")
     _, weights = trainer.train(verbose=1)
 
-    with open('data/new_output.json', 'w') as f:
+    with open('data/custom_layers2.json', 'w') as f:
         json.dump(weights, f, cls=NumpyEncoder)
+    """
+
+    domain = 'problems/deterministic_blocksworld/domain.pddl'
+    problems = [
+        'problems/deterministic_blocksworld/pb5_p01.pddl'
+    ]
+
+    print("Instancing ASNets")
+    trainer = Trainer(domain, problems)
+    print("Training")
+    _, weights = trainer.train(verbose=1)
+
+    print("Executing a test policy with the Network")
+    helper = trainer.helpers[0]
+    states, actions = helper.run_policy(helper.init_state)
+    for i, act in enumerate(actions):
+        print("State: ", states[i])
+        print("Action taken: ", act)
+    print("State: ", states[-1])
+    if helper.is_goal(states[-1]):
+        print("GOAL REACHED")
+

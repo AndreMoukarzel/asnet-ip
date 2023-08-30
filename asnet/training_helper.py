@@ -1,24 +1,58 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict, FrozenSet
 
 from .asnet import ASNet
 from .weight_transfer import get_lifted_weights, set_lifted_weights
 
 import numpy as np
-from tqdm import tqdm
-from tensorflow import keras
 from ippddl_parser.value_iteration import ValueIterator
 
 
 class TrainingHelper:
+    """
+    Class with helpful methods for training. Instances both the ASNet as its
+    teacher planner into itself.
+
+    Methods
+    -------
+    is_goal(state)
+        Returns if a state is a goal state
+
+    applicable_actions(state)
+        Returns a list of all applicable actions in the state
+
+    run_policy(initial_state, max_steps, verbose)
+        Runs the ASNet's policy from the initial_state until a goal state or max_steps are reached.
+
+    teacher_rollout(initial_state, all_states, state_best_actions)
+        Rollouts the teacher planner from the initial_state until a terminal state is reached.
+
+    generate_training_inputs(verbose)
+        Generates inputs compatible with ASNet's training.
+
+    get_model_weights() -> Dict[str, np.array]
+        Returns the instanced ASNet's weights, identifying them by the lifted name of their related action/proposition.
+
+    set_model_weights(weights: Dict[str, np.array]) -> None
+        Overwrite the instanced ASNet's weights with the specified weights.
+    """
 
     def __init__(self, domain_file: str, problem_file: str) -> None:
-        self.net = ASNet(domain_file, problem_file)
+        """
+        Parameters
+        ----------
+        domain_file : str
+            IPPDDL file specifying the problem domain
+        problem_file : str
+            IPPDDL file specifying the problem instance
+        """
+        self.net: ASNet = ASNet(domain_file, problem_file)
+        self.net.compile()
         self.parser = self.net.parser
         self.init_state: str = self.parser.state
 
         # Creates Action instances referenced by the names used in ground_actions.
         # Used when checking if an action is applicable in a state
-        self.action_objects = {}
+        self.action_objects: Dict[Tuple[str], any] = {}
         self.instance_Actions: list = self.net._get_ground_actions() # List of Action objects representing all ground actions of instance
         for act in self.instance_Actions:
             self.action_objects[(act.name, act.parameters)] = act
@@ -29,16 +63,30 @@ class TrainingHelper:
         self.state_vals = iterator.solve(domain_file, problem_file)
     
 
-    def _state_to_input(self, state) -> List[float]:
+    ################################################# PRIVATE METHODS ##################################################
+
+
+    def _state_to_input(self, state: FrozenSet[Tuple[str]]) -> List[float]:
         """Converts a state to a list of 0s and 1s that can be received as an
-        input by the instanced ASNet
+        input by the instanced ASNet.
+
+        Parameters
+        ----------
+        state: FrozenSet[Tuple[str]]
+            A set of tuples of format (predicate name, object1, object2...)
+            with all true propositions representing the state.
+        
+        Returns
+        -------
+        List[float]
+            Inputable representation of the received state.
         """
         state_input: List[float] = []
 
         for act in self.net.ground_actions:
             # For each related proposition of an action, adds a value
             # indicating if it is in the current state
-            for prop_index in self.net.pred_indexed_relations[act]:
+            for prop_index in self.net.get_related_prop_indexes()[act]:
                 current_prop = self.net.propositions[prop_index]
                 if current_prop in state:
                     state_input.append(1.0)
@@ -46,7 +94,7 @@ class TrainingHelper:
                     state_input.append(0.0)
             # For each related proposition of an action, adds a value
             # indicating if it is in a goal state
-            for prop_index in self.net.pred_indexed_relations[act]:
+            for prop_index in self.net.get_related_prop_indexes()[act]:
                 current_prop = self.net.propositions[prop_index]
                 if current_prop in self.parser.positive_goals:
                     state_input.append(1.0)
@@ -61,11 +109,16 @@ class TrainingHelper:
         return state_input
 
 
-    def _best_actions_by_state(self) -> List[tuple]:
-        """Given the calculated value of each state, gets the expected output
-        action in each given state in self.all_states.
+    def _best_actions_by_state(self) -> List[Tuple[str]]:
+        """For all possible states, returns their respective 'optimal action' as
+        defined by the teacher planner.
         
-        Returns a list of tuples of format (action name, action parameters)
+        Returns
+        -------
+        List[Tuple[str]]
+            Tuples of format (action name, action parameters) representing the
+            best actions for each state in the order they appear in
+            self.all_states.
         """
         state_values: List[float] = []
         for state in self.all_states:
@@ -97,33 +150,41 @@ class TrainingHelper:
         return state_best_actions
     
 
-    def _action_to_index(self, action: tuple) -> int:
+    def _action_to_index(self, action: Tuple[str]) -> int:
         """Given an action tuple of (action name, action parameters), returns
         its index in the currently instanced ASNet
         """
-        return self.net.ground_actions.index(action)
+        return self.net.get_ground_actions().index(action)
     
 
-    def _index_to_action(self, index: int) -> tuple:
+    def _index_to_action(self, index: int) -> Tuple[str]:
         """Given an action index in the currently instanced ASNet, returns the
         corresponding action tuple of (action name, action parameters)
         """
-        return self.net.ground_actions[index]
+        return self.net.get_ground_actions()[index]
 
 
     def _action_to_output(self, action_index: int) -> List[float]:
         """Converts an action index to the equivalent output of a categorical
-        neural network. That is, a list of values where the chosen action has
-        value 1.0
+        neural network.
+        
+        Returns
+        -------
+        List[float]
+            A list where the chosen action's index has value 1.0 and all other
+            elements are 0.0
         """
-        action_num: int = len(self.net.ground_actions)
+        action_num: int = len(self.net.get_ground_actions())
         action_output : List[float] = [0.0] * action_num
         action_output[action_index] = 1.0
         return action_output
     
 
-    def is_goal(self, state: str) -> bool:
-        """Returns if the current state is a goal state"""
+    ################################################## PUBLIC METHODS ##################################################
+    
+
+    def is_goal(self, state: FrozenSet[Tuple[str]]) -> bool:
+        """Returns if the specified state is a goal state"""
         goal_pos: frozenset = self.parser.positive_goals
         goal_neg: frozenset = self.parser.negative_goals
         if goal_pos.issubset(state) and goal_neg.isdisjoint(state):
@@ -131,7 +192,7 @@ class TrainingHelper:
         return False
     
 
-    def applicable_actions(self, state: str) -> list:
+    def applicable_actions(self, state: FrozenSet[Tuple[str]]) -> list:
         """Returns a list of applicable actions for the state"""
         if self.is_goal(state):
             return []
@@ -143,12 +204,31 @@ class TrainingHelper:
         return app_acts
 
 
-    def run_policy(self, initial_state: str, max_steps: int = 50, verbose: int = 0) -> Tuple[List[str], List[tuple]]:
+    def run_policy(
+            self, initial_state: FrozenSet[Tuple[str]], max_steps: int = 50, verbose: int = 0
+        ) -> Tuple[List[FrozenSet[Tuple[str]]], List[Tuple[str]]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
         reached.
 
-        Returns the list of encountered states and the list of taken actions
+
+        Parameters
+        ----------
+        initial_state: FrozenSet[Tuple[str]]
+            A set of tuples of format (predicate name, object1, object2...)
+            with all true propositions representing the state.
+        max_steps: int, optional
+            Maximum number of actions the ASNet will take before terminating the
+            policy.
+        verbose: int, optional
+            How much information the ASNet will print when processing each chosen
+            action. Can be 0, 1 or 2. By default is 0 (no prints).
+
+        Returns
+        -------
+        Tuple[List[FrozenSet[Tuple[str]]], List[Tuple[str]]]
+            Returns a list of the encountered states while executing the policy
+            and another list with the actions taken in order.
         """
         states: List[str] = [initial_state]
         actions: List[tuple] = []
@@ -178,14 +258,30 @@ class TrainingHelper:
         return states, actions
 
 
-    def teacher_rollout(self, initial_state, all_states: List[str], state_best_actions: List[tuple]) -> List[str]:
-        """Rollouts the teacher's policy from the given initial state until
-        a goal or terminal state is reached
+    def teacher_rollout(
+            self, initial_state: FrozenSet[Tuple[str]], all_states: List[FrozenSet[Tuple[str]]], state_best_actions: List[Tuple[str]]
+        ) -> List[FrozenSet[Tuple[str]]]:
+        """Rollouts the teacher planner's policy from the given initial state
+        until a goal or terminal state is reached.
 
-        Returns the list of encountered states
+        Parameters
+        ----------
+        initial_state: FrozenSet[Tuple[str]]
+            A set of tuples of format (predicate name, object1, object2...)
+            with all true propositions representing the state.
+        all_states: List[FrozenSet[Tuple[str]]]
+            List with all possible states in the problem instance
+        state_best_actions: List[Tuple[str]]
+            List with the best action to take on each state. The value in index
+            i is the best action to be taken when in state all_states[i].
+        
+        Returns
+        -------
+        List[FrozenSet[Tuple[str]]]
+            All states in teacher planner's plan
         """
-        states: List[str] = [initial_state]
-        curr_state: str = initial_state
+        states: List[FrozenSet[Tuple[str]]] = [initial_state]
+        curr_state: FrozenSet[Tuple[str]] = initial_state
         app_actions: list = self.applicable_actions(curr_state)
         
         while not self.is_goal(curr_state) and len(app_actions) > 0:
@@ -210,6 +306,21 @@ class TrainingHelper:
         """Generates the training states and their corresponding 'ideal' actions
         and converts them to a format inputable into an ASNet, so they can be
         used for training.
+
+        Parameters
+        ----------
+        verbose: int, optional
+            Verbosity mode when running the ASNet's policy. 0 = silent,
+            1 = progress bar, 2 = one line per epoch.
+
+        Returns
+        -------
+        Tuple[List[List[float]], List[List[float]]]
+            The first returned list contains elements representing a state
+            inputable into an ASNet
+
+            The second returned list contains elements representing the desired
+            output actions in the format outputed by an ASNet
         """
         states: List[str] = list(self.all_states)
         state_best_actions: List[tuple] = self._best_actions_by_state()
@@ -232,54 +343,21 @@ class TrainingHelper:
         return converted_states, converted_actions
 
 
-    def train(self, full_epochs: int = 50, train_epochs: int = 500, verbose: int = 0) -> list:
-        """Trains the instanced ASNet on the problem
-        
-        Returns training history of all training iterations/full_epochs
-        """
-
-        # Configures Early Stopping configuration for training
-        callback = keras.callbacks.EarlyStopping(monitor='auc', patience=15, min_delta=0.001)
-
-        # Compiles Neural Network
-        self.net.compile()
-        model = self.net.get_model()
-
-        histories: list = []
-        for _ in tqdm(range(full_epochs)):
-            converted_states, converted_actions = self.generate_training_inputs(verbose=verbose)
-
-            minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
-            history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
-            histories.append(history)
-
-            if history.history['auc'][-1] >= 0.99999:
-                # If the model is already extremely efficient in replicating the Teacher, we stop the training early
-                break
-        return histories
-
-
-    def get_model_weights(self):
+    def get_model_weights(self) -> Dict[str, np.array]:
+        """Returns a dictionary with the lifted names of layers from the
+        instanced ASNet as keys, and their weights and biases as values."""
         return get_lifted_weights(self.net)
     
 
-    def set_model_weights(self, weights):
+    def set_model_weights(self, weights: Dict[str, np.array]) -> None:
+        """Overwrites the weights and biases of the instanced ASNet by the
+        received weights
+
+        Parameters
+        ----------
+        weights: Dict[str, np.array]
+            Weights and Biases such as obtained by the method get_model_weights().
+            It is expected that the weights variable will be originary from
+            a compatible ASNet, based on a problem of the same domain.
+        """
         set_lifted_weights(self.net, weights)
-        
-
-
-if __name__ == "__main__":
-    domain = '../problems/deterministic_blocksworld/domain.pddl'
-    problem = '../problems/deterministic_blocksworld/pb5_p00.pddl'
-
-    trainer = TrainingHelper(domain, problem)
-    print("Training")
-    trainer.train(full_epochs=800, train_epochs=1000)
-    print("Executing a test policy with the Network")
-    states, actions = trainer.run_policy(trainer.init_state)
-    for i, act in enumerate(actions):
-        print("State: ", states[i])
-        print("Action taken: ", act)
-    print("State: ", states[-1])
-    if trainer.is_goal(states[-1]):
-        print("GOAL REACHED")
