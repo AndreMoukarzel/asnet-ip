@@ -31,9 +31,7 @@ python install -e .
 
 This repository is structured as follows:
 
-- `asnet/` contains our implementation of ASNets.
-  - Running `asnet.py` on its own will instance an ASNet for a small deterministic BlocksWorld problem.
-  - Running `trainer.py` on its own will instance an ASNet for a small BlocksWorld problem, train it, display its chosen actions, transfer its weights for a new ASNet instance for a larger problem and display this new network's chosen actions.
+- `asnet/` contains our implementation of ASNets, and all auxiliary code used in their construction and training.
 - `problems/` includes all problems that we used to train + test the network.
 
 
@@ -52,6 +50,17 @@ cd asnet-ip
 python -B -m asnet.asnet
 ```
 
+Multiple arguments are available when running the asnet class:
+- `--domain`/`-d`: Specify different problem domain
+- `--problem`/`-p`: Specify different problem instance
+- `--image_name`/`-img`: Specify save path to save image representing the ASNet's structure.
+>Below is a demonstration of the usage of multiple arguments.
+
+```Shell
+cd asnet-ip
+python -B -m asnet.asnet -d problems/deterministic_blocksworld/domain.pddl -p problems/deterministic_blocksworld/pb6.pddl --image_name asnet.jpg
+```
+
 ### Trainer
 
 Executing this class by itself will train an ASNet for the given domain in multiple problem instances. It takes a while.
@@ -61,4 +70,11 @@ The weights and biases of the network are saved to the `data/` folder after trai
 cd asnet-ip
 python -B -m asnet.trainer
 ```
+>Such as with the execution of the ASNet's class, optional arguments may be specified for personalization of the
+execution.
 
+**For details on available arguments use `--help` such as demonstrated below:**
+```Shell
+cd asnet-ip
+python -B -m asnet.trainer --help
+```

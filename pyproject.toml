@@ -1,0 +1,25 @@
+[project]
+
+name="asnet"
+description="Keras implementation of ASNets"
+version="0.1"
+authors = [{name = "André F. Moukarzel", email = "andre.moukarzel@usp.ime.br"}]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    'tensorflow==2.12.0',
+    'tqdm==4.66.1',
+    'click==8.1.7',
+    'ippddl-parser @ git+https://github.com/AndreMoukarzel/ippddl-parser'
+]
+keywords = ["asnet", "pddl", "planning", "ai", "mdp"]
+
+
+[project.urls]
+
+repository ="https://github.com/AndreMoukarzel/asnet-ip"
+
+
+[tool.setuptools]
+
+packages = ["asnet"]
