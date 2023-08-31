@@ -53,7 +53,7 @@ class ASNet:
         Converts action indexes to equivalent indexes from the input layer.
     """
 
-    def __init__(self, domain_file: str, problem_file: str) -> None:
+    def __init__(self, domain_file: str, problem_file: str, instance_network: bool = True) -> None:
         """
         Parameters
         ----------
@@ -61,6 +61,8 @@ class ASNet:
             IPPDDL file specifying the problem domain
         problem_file : str
             IPPDDL file specifying the problem instance
+        instance_asnet: bool = True
+            If the network will be instanced in initialization.
         """
         logging.info(f"Building ASNet based on:\n\tDomain: {domain_file}\n\tProblem: {problem_file}")
         self.domain: str = domain_file
@@ -88,7 +90,8 @@ class ASNet:
         # List propositions related to each action by their index in self.propositions
         self.related_prop_indexes: Dict[Tuple[str], List[int]] = self._values_to_index(act_relations, self.propositions)
 
-        self.model = self._instance_network()
+        if instance_network:
+            self.model = self._instance_network()
 
 
     ################################################ PRIVATE METHODS ################################################

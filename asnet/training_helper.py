@@ -4,6 +4,7 @@ from .asnet import ASNet
 from .weight_transfer import get_lifted_weights, set_lifted_weights
 
 import numpy as np
+from ippddl_parser.parser import Parser
 from ippddl_parser.value_iteration import ValueIterator
 
 
@@ -28,6 +29,9 @@ class TrainingHelper:
 
     generate_training_inputs(verbose)
         Generates inputs compatible with ASNet's training.
+    
+    get_model()
+        Returns the ASNet's model, if it was instanced.
 
     get_model_weights() -> Dict[str, np.array]
         Returns the instanced ASNet's weights, identifying them by the lifted name of their related action/proposition.
@@ -36,7 +40,7 @@ class TrainingHelper:
         Overwrite the instanced ASNet's weights with the specified weights.
     """
 
-    def __init__(self, domain_file: str, problem_file: str) -> None:
+    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True) -> None:
         """
         Parameters
         ----------
@@ -44,11 +48,14 @@ class TrainingHelper:
             IPPDDL file specifying the problem domain
         problem_file : str
             IPPDDL file specifying the problem instance
+        instance_asnet: bool = True
+            If it should instance an ASNet's network.
         """
-        self.net: ASNet = ASNet(domain_file, problem_file)
-        self.net.compile()
-        self.parser = self.net.parser
-        self.init_state: str = self.parser.state
+        self.net: ASNet = ASNet(domain_file, problem_file, instance_network=instance_asnet)
+        if instance_asnet:
+            self.net.compile()
+        self.parser: Parser = self.net.parser
+        self.init_state: Tuple[str] = self.parser.state
 
         # Creates Action instances referenced by the names used in ground_actions.
         # Used when checking if an action is applicable in a state
@@ -205,7 +212,7 @@ class TrainingHelper:
 
 
     def run_policy(
-            self, initial_state: FrozenSet[Tuple[str]], max_steps: int = 50, verbose: int = 0
+            self, initial_state: FrozenSet[Tuple[str]], model = None, max_steps: int = 50, verbose: int = 0
         ) -> Tuple[List[FrozenSet[Tuple[str]]], List[Tuple[str]]]:
         """Executes the ASNet's chosen actions in the problem instance until
         a terminal state is found or the number of maximum allowed steps is
@@ -217,6 +224,9 @@ class TrainingHelper:
         initial_state: FrozenSet[Tuple[str]]
             A set of tuples of format (predicate name, object1, object2...)
             with all true propositions representing the state.
+        model : keras.Model
+            Model to be used to run policy on problem instance. If none is given,
+            uses the instanced model.
         max_steps: int, optional
             Maximum number of actions the ASNet will take before terminating the
             policy.
@@ -232,9 +242,11 @@ class TrainingHelper:
         """
         states: List[str] = [initial_state]
         actions: List[tuple] = []
-        model = self.net.model
         curr_state: str = initial_state
         app_actions: list = self.applicable_actions(curr_state)
+
+        if model is None:
+            model = self.get_model()
         
         while not self.is_goal(curr_state) and len(app_actions) > 0:
             input_state: List[float] = self._state_to_input(curr_state)
@@ -302,13 +314,16 @@ class TrainingHelper:
         return states
     
 
-    def generate_training_inputs(self, verbose: int = 0) -> Tuple[List[List[float]], List[List[float]]]:
+    def generate_training_inputs(self, model = None, verbose: int = 0) -> Tuple[List[List[float]], List[List[float]]]:
         """Generates the training states and their corresponding 'ideal' actions
         and converts them to a format inputable into an ASNet, so they can be
         used for training.
 
         Parameters
         ----------
+        model : keras.Model, optional
+            Model to be used to run policy on problem instance. If none is given,
+            uses the instanced model.
         verbose: int, optional
             Verbosity mode when running the ASNet's policy. 0 = silent,
             1 = progress bar, 2 = one line per epoch.
@@ -325,7 +340,7 @@ class TrainingHelper:
         states: List[str] = list(self.all_states)
         state_best_actions: List[tuple] = self._best_actions_by_state()
         # Runs policy in search of states to be explored in training
-        explored_states: List[str] = self.run_policy(self.init_state, verbose)[0]
+        explored_states: List[str] = self.run_policy(self.init_state, model, verbose)[0]
         rollout_states: List[str] = []
         # Rollouts the teacher policy from each state found from the model's run,
         # to be certain that there will be optimal states in the training
@@ -341,6 +356,15 @@ class TrainingHelper:
         converted_actions: List[List[float]] = [self._action_to_output(act_ind) for act_ind in correct_actions_indexes]
 
         return converted_states, converted_actions
+
+
+    def get_model(self):
+        """Returns the problem's ASNet model. If the network was not instanced,
+        returns an error."""
+        try:
+            return self.net.get_model()
+        except AttributeError:
+            raise Exception("TrainingHelper's ASNet was not instanced!")
 
 
     def get_model_weights(self) -> Dict[str, np.array]:
