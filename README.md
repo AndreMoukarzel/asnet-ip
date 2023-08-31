@@ -52,14 +52,16 @@ cd asnet-ip
 python -B -m asnet.asnet
 ```
 
-It is possible to specify different problem domains with `--domain`/`-d` argument, different instances with the `--problem`/`-p` argument and you may even save an image representing the
-constructed ASNet by specifying the image's save path with `--image_name`/`-img`, such as demonstrated below:
+Multiple arguments are available when running the asnet class:
+- `--domain`/`-d`: Specify different problem domain
+- `--problem`/`-p`: Specify different problem instance
+- `--image_name`/`-img`: Specify save path to save image representing the ASNet's structure.
+>Below is a demonstration of the usage of multiple arguments.
 
 ```Shell
 cd asnet-ip
 python -B -m asnet.asnet -d problems/deterministic_blocksworld/domain.pddl -p problems/deterministic_blocksworld/pb6.pddl --image_name asnet.jpg
 ```
-
 
 ### Trainer
 
@@ -70,4 +72,11 @@ The weights and biases of the network are saved to the `data/` folder after trai
 cd asnet-ip
 python -B -m asnet.trainer
 ```
+>Such as with the execution of the ASNet's class, optional arguments may be specified for personalization of the
+execution.
 
+**For details on available arguments use `--help` such as demonstrated below:**
+```Shell
+cd asnet-ip
+python -B -m asnet.trainer --help
+```
