@@ -31,9 +31,7 @@ python install -e .
 
 This repository is structured as follows:
 
-- `asnet/` contains our implementation of ASNets.
-  - Running `asnet.py` on its own will instance an ASNet for a small deterministic BlocksWorld problem.
-  - Running `trainer.py` on its own will instance an ASNet for a small BlocksWorld problem, train it, display its chosen actions, transfer its weights for a new ASNet instance for a larger problem and display this new network's chosen actions.
+- `asnet/` contains our implementation of ASNets, and all auxiliary code used in their construction and training.
 - `problems/` includes all problems that we used to train + test the network.
 
 
