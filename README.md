@@ -1,4 +1,5 @@
-# ASNets
+# ASNets [![Actions Status](https://github.com/AndreMoukarzel/asnet-ip/workflows/build/badge.svg)](https://github.com/AndreMoukarzel/asnet-ip/actions) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 
 This repository aims to reimplement the code used in the AAAI'18 paper
 [Action Schema Networks: Generalised Policies with Deep Learning](https://arxiv.org/abs/1709.04271) 
