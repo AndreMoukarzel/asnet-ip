@@ -5,6 +5,7 @@ All other layers, such as the Lambda and Concatenate layers, are used simply to
 make sure the action and proposition layers have the appropriate format to have
 shareable weights.
 """
+import time
 import logging
 from typing import List, Dict, Tuple
 import itertools
@@ -53,7 +54,7 @@ class ASNet:
         Converts action indexes to equivalent indexes from the input layer.
     """
 
-    def __init__(self, domain_file: str, problem_file: str, instance_network: bool = True) -> None:
+    def __init__(self, domain_file: str, problem_file: str, layer_num: int=2, instance_network: bool = True) -> None:
         """
         Parameters
         ----------
@@ -61,7 +62,9 @@ class ASNet:
             IPPDDL file specifying the problem domain
         problem_file : str
             IPPDDL file specifying the problem instance
-        instance_asnet: bool = True
+        layer_num: int, optional
+            Number of Action and Proposition Layers to be built in the Network.
+        instance_asnet: bool, optional
             If the network will be instanced in initialization.
         """
         logging.info(f"Building ASNet based on:\n\tDomain: {domain_file}\n\tProblem: {problem_file}")
@@ -91,7 +94,7 @@ class ASNet:
         self.related_prop_indexes: Dict[Tuple[str], List[int]] = self._values_to_index(act_relations, self.propositions)
 
         if instance_network:
-            self.model = self._instance_network()
+            self.model = self._instance_network(layer_num)
 
 
     ################################################ PRIVATE METHODS ################################################
@@ -582,16 +585,20 @@ def share_layer_weights(layer1, layer2) -> None:
 @click.command()
 @click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/deterministic_blocksworld/domain.pddl')
 @click.option("--problem", "-p", type=str, help="Path to a problem's instance PPDDL file.", default='problems/deterministic_blocksworld/pb3.pddl')
+@click.option("--layer_num", "-l", type=int, help="Number of layers in the ASNet.", default=2)
 @click.option("--image_name", "-img", type=str, help="Save path of the ASNet plot. By default does not save a plot.", default='')
 @click.option("--debug", is_flag=True, help="Debug prints. Off by default.")
-def execute(domain, problem, image_name: str, debug: bool):
+def execute(domain, problem, layer_num: int, image_name: str, debug: bool):
     if debug:
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s %(levelname)s %(message)s"
         )
 
-    asnet = ASNet(domain, problem)
+    tic = time.process_time()
+    asnet = ASNet(domain, problem, layer_num)
+    toc = time.process_time()
+    print(f"Built ASNet in {toc-tic}s")
     if image_name != '':
         keras.utils.plot_model(asnet.model, image_name, show_shapes=True)
 

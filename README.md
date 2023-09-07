@@ -52,9 +52,11 @@ python -B -m asnet.asnet
 ```
 
 Multiple arguments are available when running the asnet class:
-- `--domain`/`-d`: Specify different problem domain
-- `--problem`/`-p`: Specify different problem instance
+- `--domain`/`-d`: Specify different problem domain.
+- `--problem`/`-p`: Specify different problem instance.
+- `--layer_num`/`-l`: Number of layers in the ASNet.
 - `--image_name`/`-img`: Specify save path to save image representing the ASNet's structure.
+- `--debug`: Turns on debug prints.
 >Below is a demonstration of the usage of multiple arguments.
 
 ```Shell
