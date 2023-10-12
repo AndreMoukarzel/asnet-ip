@@ -1,6 +1,8 @@
 from typing import List, Tuple, Dict, FrozenSet
 
 from .asnet import ASNet
+from .asnet_no_lmcut import ASNetNoLMCut
+from .lm_cut import LMCutHeuristic
 from .weight_transfer import get_lifted_weights, set_lifted_weights
 
 import numpy as np
@@ -40,7 +42,7 @@ class TrainingHelper:
         Overwrite the instanced ASNet's weights with the specified weights.
     """
 
-    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True) -> None:
+    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True, lmcut: bool = True) -> None:
         """
         Parameters
         ----------
@@ -48,10 +50,17 @@ class TrainingHelper:
             IPPDDL file specifying the problem domain
         problem_file : str
             IPPDDL file specifying the problem instance
-        instance_asnet: bool = True
-            If it should instance an ASNet's network.
+        instance_asnet: bool, Optional
+            If it should instance an ASNet's network. By default is True.
+        lmcut: bool, Optional
+            If the instanced ASNet should use the LM-Cut heuristic. By default is true.
         """
-        self.net: ASNet = ASNet(domain_file, problem_file, instance_network=instance_asnet)
+        self.lmcut: bool = lmcut
+        if lmcut:
+            self.net: ASNet = ASNet(domain_file, problem_file, instance_network=instance_asnet)
+            self.lm_heuristic = LMCutHeuristic(self.net.parser)
+        else:
+            self.net: ASNetNoLMCut = ASNetNoLMCut(domain_file, problem_file, instance_network=instance_asnet)
         if instance_asnet:
             self.net.compile()
         self.parser: Parser = self.net.parser
@@ -75,7 +84,7 @@ class TrainingHelper:
 
     def _state_to_input(self, state: FrozenSet[Tuple[str]]) -> List[float]:
         """Converts a state to a list of 0s and 1s that can be received as an
-        input by the instanced ASNet.
+        input by the instanced ASNet or ASNetNoLMCut.
 
         Parameters
         ----------
@@ -107,6 +116,22 @@ class TrainingHelper:
                     state_input.append(1.0)
                 else:
                     state_input.append(0.0)
+            # Adds values related to the LM-Cut heuristic
+            if self.lmcut:
+                cuts = self.lm_heuristic.all_cuts
+                state_vals: List[float] = [0.0, 0.0, 1.0]
+                for cut_group in cuts:
+                    for cut_act in cut_group:
+                        if cut_act == act:
+                            state_vals[2] = 0.0
+
+                            if len(cut_group) == 1:
+                                state_vals[0] = 1.0
+                            else:
+                                state_vals[1] = 1.0
+                state_input.append(state_vals[0]) # Iff a appears as the only action in at least one landmark
+                state_input.append(state_vals[1]) # Iff a appears in a landmark containing two or more actions
+                state_input.append(state_vals[2]) # Iff does not appear in any landmark
             # Adds final value indicating if the action is applicable
             if self.action_objects[act].is_applicable(state):
                 state_input.append(1.0)
