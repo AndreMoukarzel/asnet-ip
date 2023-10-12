@@ -78,8 +78,15 @@ class LMCutHeuristic:
         # Removes all delete effects from considered actions, since this is a delete-relaxed heuristic algorithm.
         for action in parser.actions:
             for act in action.groundify(parser.objects, parser.types):
-                act_name: str = f"{act.name}_{'_'.join(act.parameters)}"
+                act_name: Tuple[str] = (act.name, act.parameters)
                 self.operators[act_name] = RelaxedOperator(act_name)
+
+                if not act.positive_preconditions:
+                    # If there are no preconditions, add generic fact that is always applicable
+                    if not "ALWAYS TRUE" in self.facts:
+                        self.facts["ALWAYS TRUE"] = RelaxedFact("ALWAYS TRUE")
+                    self.add_precondition_to_operator(self.facts["ALWAYS TRUE"], self.operators[act_name])
+
                 for precond in act.positive_preconditions:
                     if precond not in self.facts:
                         self.facts[precond] = RelaxedFact(precond)
@@ -128,6 +135,8 @@ class LMCutHeuristic:
         to_be_expanded = []
         heapify(to_be_expanded)
 
+        if 'ALWAYS TRUE' in self.facts:
+            starting_facts.add('ALWAYS TRUE')
         for fact in starting_facts:
             if fact in self.facts:
                 Fact: RelaxedFact = self.facts[fact]
@@ -233,6 +242,8 @@ class LMCutHeuristic:
         cut = set()
         starting_facts: set = {x for x in state}
 
+        if 'ALWAYS TRUE' in self.facts:
+            starting_facts.add('ALWAYS TRUE')
         for fact in starting_facts:
             if fact in self.facts:
                 Fact: RelaxedFact = self.facts[fact]
@@ -276,7 +287,6 @@ class LMCutHeuristic:
         # first compute hmax starting from the current state
         self._compute_hmax(state)
         if goal_state.hmax_value == float("inf"):
-            print("HERE")
             return float("inf")
         while goal_state.hmax_value != 0:
             # next find an appropriate cut
