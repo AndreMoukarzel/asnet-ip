@@ -1,5 +1,6 @@
-from typing import List, Dict
+from typing import List
 import json
+import time
 
 from .training_helper import TrainingHelper
 
@@ -162,8 +163,11 @@ class NumpyEncoder(json.JSONEncoder):
 def execute(domain, problems, valid: str, save: str, verbose: int):
     print("Instancing ASNets")
     trainer = Trainer(domain, problems, valid)
-    print("Training")
+    print("Starting Training...")
+    tic = time.process_time()
     _, weights = trainer.train(verbose=verbose)
+    toc = time.process_time()
+    print(f"Training concluded {toc-tic}s")
 
     if save == '':
         save = domain.split('/')[-2]
