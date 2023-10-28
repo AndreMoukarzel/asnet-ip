@@ -81,3 +81,16 @@ execution.
 cd asnet-ip
 python -B -m asnet.trainer --help
 ```
+
+
+### Heuristics
+
+Analogously, the heuristics can be also executed on specific problem instances by being referenced with the
+`python -B -m` command, but with consideration of such files being inside the `heuristics/` subfolder.
+Therefore, the heuristics can be run as follows:
+
+```Shell
+cd asnet-ip
+python -B -m asnet.heuristics.lm_cut
+python -B -m asnet.heuristics.hmax
+```

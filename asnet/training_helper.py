@@ -2,7 +2,7 @@ from typing import List, Tuple, Dict, FrozenSet
 
 from .asnet import ASNet
 from .asnet_no_lmcut import ASNetNoLMCut
-from .lm_cut import LMCutHeuristic
+from .heuristics.lm_cut import LMCutHeuristic
 from .weight_transfer import get_lifted_weights, set_lifted_weights
 
 import numpy as np
