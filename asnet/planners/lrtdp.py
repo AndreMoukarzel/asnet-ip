@@ -105,57 +105,9 @@ class LRTDP:
             # Randomizes order so actions with same Q value may all be picked
             random.shuffle(self.applicable_actions[state])
         return self.applicable_actions[state]
-    
-
-    def plan_on(self):
-        self.lrtdp(
-            heuristic=self.heuristic, iterations=self.iterations
-        )
-        res = self._tear_down_plan_on(self.heuristic)
-        return res
 
 
-    def _tear_down_plan_on(self, heuristic):
-        results = {}
-
-        q_values = defaultdict(lambda : dict())
-        policy_dict = {}
-        for s in self.state_values.keys():
-            policy_dict[s] = self.policy(s)
-            for a in mdp.actions(s):
-                q_values[s][a] = self.Q(s, a)
-        results['Q'] = q_values
-
-        @FunctionalPolicy
-        @lru_cache(maxsize=None)
-        def policy(s):
-            try:
-                action = policy_dict[s]
-                return DictDistribution.deterministic(action)
-            except KeyError:
-                pass
-            max_actions = []
-            max_val = float('-inf')
-            for a in mdp.actions(s):
-                ns_dist = mdp.next_state_dist(s, a)
-                val = ns_dist.expectation(
-                    lambda ns : mdp.reward(s, a, ns) + mdp.discount_rate*heuristic(ns)
-                ) 
-                if val > max_val:
-                    max_actions = [a]
-                elif val == max_val:
-                    max_actions.append(a)
-                max_val = max(val, max_val)
-            return DictDistribution.uniform(max_actions)
-
-        results['policy'] = policy_dict
-        res.initial_value = sum([self.state_values[s0]*p for s0, p in mdp.initial_state_dist().items()])
-
-        return results
-
-
-    def lrtdp(self):
-        #self.policy_values: dict = {} # Q in the Bellman Equation
+    def execute(self):
         self.state_values: dict = {} # V in the Bellman equation
         self.solved_states: dict = {}
         self.applicable_actions: dict = {}
@@ -195,7 +147,7 @@ class LRTDP:
             s = act.apply(s) # Applies action with best Q value to state
             visited.append(s)
             
-            if len(visited) > len(self.states):#self.max_trial_length:
+            if len(visited) > len(self.states) * 10:#self.max_trial_length:
                 break
         s = visited.pop()
         while self._check_solved(s) and visited:
@@ -217,7 +169,7 @@ class LRTDP:
                 flag = False
             else:
                 successor_states, _ = get_successor_states(s, self.actions)
-                for ns in successor_states:#mdp.next_state_dist(s, self.policy(s)).support:
+                for ns in successor_states:
                     if not self.solved_states[ns] and ns not in open and ns not in closed:
                         open.append(ns)
         if flag:
@@ -275,5 +227,14 @@ if __name__ == "__main__":
     lmcut = LMCutHeuristic(parser)
 
     lrtdp = LRTDP(parser, lmcut)
-    lrtdp.lrtdp()
-    print(lrtdp.policy(parser.state))
+    lrtdp.execute()
+
+    s = parser.state
+    print(s)
+    for _ in range(20):
+        if is_goal(s, parser.positive_goals, parser.negative_goals):
+            print("GOAL REACHED")
+            break
+        act = lrtdp.policy(s)
+        s = act.apply(s)
+        print(f'|-> {act.name}[{act.parameters}] -> {s}')
