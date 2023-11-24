@@ -68,8 +68,6 @@ class JustificationGraph:
     """Justification Graph's representation of a delete-relaxated problem"""
 
     def __init__(self, parser: Parser):
-        self.dead_end: bool = True
-        self.goal_plateau: set = set()
         self.reachable_facts: set = set()
         self.facts: Dict[Tuple[str], RelaxedFact] = {}
         self.operators: Dict[str, RelaxedOperator] = {}

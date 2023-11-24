@@ -16,6 +16,8 @@ class LMCutHeuristic(HMax):
 
     def __init__(self, parser: Parser):
         super().__init__(parser)
+        self.dead_end: bool = True
+        self.goal_plateau: set = set()
         self.heuristic_value, self.all_cuts = self(parser.state)
     
 
@@ -132,8 +134,7 @@ class LMCutHeuristic(HMax):
             cut = self.find_cut(state)
             all_cuts.append(cut)
             # finally update heuristic value
-            min_cost = min([o.cost for o in cut])
-            # logging.debug("compute cut done")
+            min_cost = min([o.cost for o in cut]) # The cost of the landmark
             heuristic_value += min_cost
             for o in cut:
                 o.cost -= min_cost

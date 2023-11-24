@@ -3,6 +3,8 @@ from typing import List, Tuple, Dict, FrozenSet
 from .asnet import ASNet
 from .asnet_no_lmcut import ASNetNoLMCut
 from .heuristics.lm_cut import LMCutHeuristic
+from .planners.lrtdp import LRTDP
+from .planners.stlrtdp import STLRTDP
 from .weight_transfer import get_lifted_weights, set_lifted_weights
 
 import numpy as np
@@ -42,7 +44,7 @@ class TrainingHelper:
         Overwrite the instanced ASNet's weights with the specified weights.
     """
 
-    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True, lmcut: bool = True) -> None:
+    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True, lmcut: bool = True, solve: bool=True) -> None:
         """
         Parameters
         ----------
@@ -73,10 +75,27 @@ class TrainingHelper:
         for act in self.instance_Actions:
             self.action_objects[(act.name, act.parameters)] = act
         
-        # Calculates value of each state of the problem
-        iterator = ValueIterator()
-        self.all_states = iterator.get_all_states(self.parser.state, self.instance_Actions)
-        self.state_vals = iterator.solve(domain_file, problem_file)
+        if solve:
+            # Calculates value of each state of the problem with the appropriate solver
+            if not lmcut:
+                self.solver = ValueIterator()
+                self.all_states = self.solver.get_all_states(self.parser.state, self.instance_Actions)
+                self.solver.solve(domain_file, problem_file)
+            else:
+                self.solver = LRTDP(self.parser, self.lm_heuristic)
+                if ':imprecise' in self.parser.requirements:
+                    self.solver = STLRTDP(self.parser, self.lm_heuristic)
+                print(f"Solving problem instance [{problem_file.split('/')[-1]}]")
+                self.solver.execute()
+                for _ in range(5):
+                    if self.solver.solution_is_valid():
+                        break
+                    self.solver.execute()
+                if not self.solver.solution_is_valid():
+                    raise RuntimeError("Teacher planner could not find solution to problem in the allotted trials")
+                print("Problem instance solved!")
+                
+                self.all_states = self.solver.states
     
 
     ################################################# PRIVATE METHODS ##################################################
@@ -153,11 +172,15 @@ class TrainingHelper:
             self.all_states.
         """
         state_values: List[float] = []
+        """
         for state in self.all_states:
             state_val: float = self.state_vals[state]
             state_values.append(state_val)
+        """
         
-        state_best_actions: List[tuple] = []
+        state_best_actions: List[tuple] = [self.solver.policy(state) for state in self.all_states]
+        default_act = self.instance_Actions[0] # Action defaulted to when no actions are applicable in a state
+        """
         for state in self.all_states:
             best_action: tuple = ()
             best_state_val: float = -999.0
@@ -178,8 +201,8 @@ class TrainingHelper:
                         best_action = (act.name, act.parameters)
             
             state_best_actions.append(best_action)
-        
-        return state_best_actions
+        """
+        return [(act.name, act.parameters) if act is not None else (default_act.name, default_act.parameters) for act in state_best_actions]
     
 
     def _action_to_index(self, action: Tuple[str]) -> int:

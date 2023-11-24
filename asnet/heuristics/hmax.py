@@ -6,7 +6,7 @@ from .delete_relaxation import RelaxedFact, JustificationGraph
 from ippddl_parser.parser import Parser
 
 
-class HMax(JustificationGraph):  
+class HMax(JustificationGraph):
 
     def _compute_hmax(self, state):
         """Navigates the justification graph to compute HMax values"""
