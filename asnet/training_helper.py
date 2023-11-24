@@ -44,7 +44,7 @@ class TrainingHelper:
         Overwrite the instanced ASNet's weights with the specified weights.
     """
 
-    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True, lmcut: bool = True) -> None:
+    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True, lmcut: bool = True, solve: bool=True) -> None:
         """
         Parameters
         ----------
@@ -75,26 +75,27 @@ class TrainingHelper:
         for act in self.instance_Actions:
             self.action_objects[(act.name, act.parameters)] = act
         
-        # Calculates value of each state of the problem with the appropriate solver
-        if not lmcut:
-            self.solver = ValueIterator()
-            self.all_states = self.solver.get_all_states(self.parser.state, self.instance_Actions)
-            self.solver.solve(domain_file, problem_file)
-        else:
-            self.solver = LRTDP(self.parser, self.lm_heuristic)
-            if ':imprecise' in self.parser.requirements:
-                self.solver = STLRTDP(self.parser, self.lm_heuristic)
-            print(f"Solving problem instance [{problem_file.split('/')[-1]}]")
-            self.solver.execute()
-            for _ in range(5):
-                if self.solver.solution_is_valid():
-                    break
+        if solve:
+            # Calculates value of each state of the problem with the appropriate solver
+            if not lmcut:
+                self.solver = ValueIterator()
+                self.all_states = self.solver.get_all_states(self.parser.state, self.instance_Actions)
+                self.solver.solve(domain_file, problem_file)
+            else:
+                self.solver = LRTDP(self.parser, self.lm_heuristic)
+                if ':imprecise' in self.parser.requirements:
+                    self.solver = STLRTDP(self.parser, self.lm_heuristic)
+                print(f"Solving problem instance [{problem_file.split('/')[-1]}]")
                 self.solver.execute()
-            if not self.solver.solution_is_valid():
-                raise RuntimeError("Teacher planner could not find solution to problem in the allotted trials")
-            print("Problem instance solved!")
-            
-            self.all_states = self.solver.states
+                for _ in range(5):
+                    if self.solver.solution_is_valid():
+                        break
+                    self.solver.execute()
+                if not self.solver.solution_is_valid():
+                    raise RuntimeError("Teacher planner could not find solution to problem in the allotted trials")
+                print("Problem instance solved!")
+                
+                self.all_states = self.solver.states
     
 
     ################################################# PRIVATE METHODS ##################################################
