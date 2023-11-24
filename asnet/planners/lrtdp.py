@@ -6,6 +6,8 @@ The following code used inspiration from markkho's msdm package implementation
 """
 import random
 
+from ..heuristics.null_heuristic import NullHeuristic
+
 from ippddl_parser.parser import Parser
 from ippddl_parser.value_iteration import ValueIterator
 
@@ -43,7 +45,7 @@ def get_successor_states(state, actions):
 class LRTDP:
     def __init__(self,
                  parser: Parser,
-                 heuristic,
+                 heuristic=NullHeuristic(),
                  discount_rate: float=0.9,
                  bellman_error_margin: float=1e-2,
                  iterations: int=int(2**30)
@@ -113,12 +115,14 @@ class LRTDP:
         self.applicable_actions: dict = {}
 
         for s in self.states:
-            # Initiates states values as the heuristic value
+            # Initiates states values as the heuristic value.
             h_val: float = self.heuristic(s)
-            if type(h_val) != 'float':
+            if not isinstance(h_val, float):
                 # Some heuristics return additional information besides the heuristic value
                 h_val = h_val[0]
-            self.state_values[s] = h_val
+            # We use negative values because heuristic represent costs
+            # and we represent the states values by their estimated reward.
+            self.state_values[s] = -h_val
             self.solved_states[s] = False
         
         for i in range(self.iterations):
@@ -164,6 +168,9 @@ class LRTDP:
         while open:
             s = open.pop()
             closed.append(s)
+            if len(self._get_applicable_actions(s)) == 0:
+                flag = False
+                continue
             residual = self.state_values[s] - self.Q(s, self.policy(s))
             if abs(residual) > self.bellman_error_margin:
                 flag = False
@@ -202,18 +209,31 @@ class LRTDP:
         for i, ns in enumerate(future_states):
             reward: float = 0.0
             if is_goal(ns, self.parser.positive_goals, self.parser.negative_goals):
-                reward = 1.0
+                reward = 10.0
             q += probs[i] * (reward + self.discount_rate * self.state_values[ns])
         return q
 
 
     def policy(self, s):
-        action_list = self._get_applicable_actions(s)
+        action_list = get_applicable_actions(s, self.actions, self.parser.positive_goals, self.parser.negative_goals)
+        if len(action_list) == 0:
+            return None
         return max(action_list, key=lambda a: self.Q(s, a))
+    
+
+    def solution_is_valid(self, solution_range:int = 50) -> bool:
+        s = self.parser.state
+        for _ in range(solution_range):
+            if is_goal(s, self.parser.positive_goals, self.parser.negative_goals):
+                return True
+            act = self.policy(s)
+            s = act.apply(s)
+        return False
 
 
 if __name__ == "__main__":
     from ..heuristics.lm_cut import LMCutHeuristic
+    from ..heuristics.hmax import HMax
 
     domain_file = 'problems/deterministic_blocksworld/domain.pddl'
     problem_file = 'problems/deterministic_blocksworld/pb3.pddl'
@@ -225,6 +245,7 @@ if __name__ == "__main__":
     parser.parse_problem(problem_file)
 
     lmcut = LMCutHeuristic(parser)
+    hmax = HMax(parser)
 
     lrtdp = LRTDP(parser, lmcut)
     lrtdp.execute()
