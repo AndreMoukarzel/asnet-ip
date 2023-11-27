@@ -1,4 +1,5 @@
 from typing import List, Tuple, Dict, FrozenSet
+import time
 
 from .asnet import ASNet
 from .asnet_no_lmcut import ASNetNoLMCut
@@ -57,6 +58,7 @@ class TrainingHelper:
         lmcut: bool, Optional
             If the instanced ASNet should use the LM-Cut heuristic. By default is true.
         """
+        self.info: dict = {} # Saves information about training
         self.lmcut: bool = lmcut
         if lmcut:
             self.net: ASNet = ASNet(domain_file, problem_file, instance_network=instance_asnet)
@@ -77,14 +79,18 @@ class TrainingHelper:
         
         if solve:
             # Calculates value of each state of the problem with the appropriate solver
+            tic = time.process_time()
             if not lmcut:
                 self.solver = ValueIterator()
+                self.info['solver'] = 'VI'
                 self.all_states = self.solver.get_all_states(self.parser.state, self.instance_Actions)
                 self.solver.solve(domain_file, problem_file)
             else:
-                self.solver = LRTDP(self.parser, self.lm_heuristic)
+                self.solver = LRTDP(self.parser)
+                self.info['solver'] = 'LRTDP'
                 if ':imprecise' in self.parser.requirements:
-                    self.solver = STLRTDP(self.parser, self.lm_heuristic)
+                    self.solver = STLRTDP(self.parser)
+                    self.info['solver'] = 'STLRTDP'
                 print(f"Solving problem instance [{problem_file.split('/')[-1]}]")
                 self.solver.execute()
                 for _ in range(5):
@@ -96,6 +102,8 @@ class TrainingHelper:
                 print("Problem instance solved!")
                 
                 self.all_states = self.solver.states
+            toc = time.process_time()
+            self.info['time_to_solve'] = toc-tic
     
 
     ################################################# PRIVATE METHODS ##################################################
@@ -171,37 +179,8 @@ class TrainingHelper:
             best actions for each state in the order they appear in
             self.all_states.
         """
-        state_values: List[float] = []
-        """
-        for state in self.all_states:
-            state_val: float = self.state_vals[state]
-            state_values.append(state_val)
-        """
-        
         state_best_actions: List[tuple] = [self.solver.policy(state) for state in self.all_states]
         default_act = self.instance_Actions[0] # Action defaulted to when no actions are applicable in a state
-        """
-        for state in self.all_states:
-            best_action: tuple = ()
-            best_state_val: float = -999.0
-            for act in self.instance_Actions:
-                if act.is_applicable(state):
-                    # "Future" states are the s', the states reached by applying the action to current state s 
-                    future_states, _ = act.get_possible_resulting_states(state)
-
-                    # Gets the most valuable result among future states
-                    best_fut_val: float = -999.0
-                    for fut_state in future_states:
-                        fut_state_index: int = list(self.all_states).index(fut_state)
-                        fut_state_val: float = state_values[fut_state_index]
-                        best_fut_val = max(best_fut_val, fut_state_val)
-                            
-                    if best_action == () or best_fut_val >= best_state_val:
-                        best_state_val = best_fut_val
-                        best_action = (act.name, act.parameters)
-            
-            state_best_actions.append(best_action)
-        """
         return [(act.name, act.parameters) if act is not None else (default_act.name, default_act.parameters) for act in state_best_actions]
     
 

@@ -40,14 +40,20 @@ class Trainer:
             instance when training the ASNet. More details in
             _check_planning_success()
         """
+        self.info: dict = {} # Saves information about training
+        self.info['domain'] = domain_file
         self.helpers: List[TrainingHelper] = [TrainingHelper(domain_file, problem_files[0])]
+        self.info['problems'] = [{problem_files[0]: self.helpers[0].info}]
         if len(problem_files) > 1:
             for prob_file in problem_files[1:]:
                 helper = TrainingHelper(domain_file, prob_file, instance_asnet=False) 
                 self.helpers.append(helper)
+                self.info['problems'].append({prob_file, helper.info})
         
+        self.info['validation_problem'] = {}
         if validation_problem_file != '':
             self.val_helper = TrainingHelper(domain_file, validation_problem_file, instance_asnet=False)
+            self.info['validation_problem'] = {validation_problem_file, self.val_helper.info}
     
 
     def _check_planning_success(self, model):#shared_weights: Dict[str, np.array]) -> bool:
@@ -117,8 +123,11 @@ class Trainer:
 
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
+        self.info["early_solving"] = False
+        self.info["early_stopped"] = False
+        tic = time.process_time()
         try:
-            for _ in tqdm(range(exploration_loops)):
+            for i in tqdm(range(exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     converted_states, converted_actions = helper.generate_training_inputs(model, verbose=verbose)
                     minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
@@ -126,17 +135,21 @@ class Trainer:
                     history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
                     histories[i].append(history)
 
+                self.info["training_iterations"] = i
                 # Custom Early Stopping
                 if self._check_planning_success(model):
                     consecutive_solved += 1
                     if consecutive_solved >= 20:
                         print(f"Reached goal in {20} consecutive iterations.")
+                        self.info["early_solving"] = True
                         break
                 else:
                     consecutive_solved = 0
         except KeyboardInterrupt:
-            pass
+            self.info["early_stopped"] = True
 
+        toc = time.process_time()
+        self.info["training_time"] = toc-tic
         shared_weights = self.helpers[0].get_model_weights()
         return histories, shared_weights
 
@@ -173,6 +186,8 @@ def execute(domain, problems, valid: str, save: str, verbose: int):
         save = domain.split('/')[-2]
     with open(f'data/{save}.json', 'w') as f:
         json.dump(weights, f, cls=NumpyEncoder)
+    with open(f'info/{save}.json', 'w') as f:
+        json.dump(trainer.info, f, cls=NumpyEncoder)
 
 
 

@@ -1,5 +1,6 @@
 asnet/*.jpg
 data/*.json
+info/*.json
 
 # VS Code
 .vscode
