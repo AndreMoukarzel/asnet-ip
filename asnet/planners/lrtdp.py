@@ -12,6 +12,9 @@ from ippddl_parser.parser import Parser
 from ippddl_parser.value_iteration import ValueIterator
 
 
+DEBUG: bool = False
+
+
 def is_goal(state, positive_goals: frozenset, negative_goals: frozenset) -> bool:
     """Returns if the specified state is a goal state"""
     if positive_goals.issubset(state) and negative_goals.isdisjoint(state):
@@ -43,6 +46,8 @@ def get_successor_states(state, actions):
 
 
 class LRTDP:
+    GOAL_REWARD: float = 10
+
     def __init__(self,
                  parser: Parser,
                  heuristic=NullHeuristic(),
@@ -94,19 +99,34 @@ class LRTDP:
         return iterator.get_all_states(self.parser.state, all_actions)
     
 
-    def _get_applicable_actions(self, state):
+    def _get_applicable_actions(self, state, randomizing: bool = None):
+        if randomizing is None:
+            randomizing = self.randomize_action_order
+
         if state in self.applicable_actions:
-            if self.randomize_action_order:
+            if randomizing:
                 # Randomizes order so actions with same Q value may all be picked
                 random.shuffle(self.applicable_actions[state])
             return self.applicable_actions[state]
         
         app_actions = get_applicable_actions(state, self.actions, self.parser.positive_goals, self.parser.negative_goals)
         self.applicable_actions[state] = app_actions
-        if self.randomize_action_order:
+        if randomizing:
             # Randomizes order so actions with same Q value may all be picked
             random.shuffle(self.applicable_actions[state])
         return self.applicable_actions[state]
+    
+
+    def _get_successor_states(self, state):
+        app_acts = self._get_applicable_actions(state)
+        successor_states = []
+        states_probs = []
+        for act in app_acts:
+            future_states, probs = act.get_possible_resulting_states(state)
+            for i, state in enumerate(future_states): 
+                successor_states.append(state)
+                states_probs.append(probs[i])
+        return successor_states, states_probs
 
 
     def execute(self):
@@ -124,8 +144,13 @@ class LRTDP:
             # and we represent the states values by their estimated reward.
             self.state_values[s] = -h_val
             self.solved_states[s] = False
+            # Sets all terminal/absorbing states as solved
+            if len(self._get_applicable_actions(s)) == 0:
+                self.solved_states[s] = True
         
         for i in range(self.iterations):
+            if DEBUG:
+                print("Iteration: ", i)
             if all(self.solved_states[s] for s in self.states):
                 return
             random_state = self.states[random.randint(0, len(self.states) - 1)]
@@ -139,19 +164,17 @@ class LRTDP:
         # Ghallab, Nau, Traverso: Algorithm 6.17
         visited = [s, ]
         while not self.solved_states[s]:
-            app_acts = self._get_applicable_actions(s)
-            if len(app_acts) == 0:
-                # If there are no successor states (aka the state is absorbing) we consider the state solved.
-                self.solved_states[s] = True
-                break
-
             self._bellman_update(s)
             act = self.policy(s)
 
-            s = act.apply(s) # Applies action with best Q value to state
+            # Applies action with best Q value to state
+            s = act.apply(s)
+            # We randomly choose a state among the possible successors, so states with low probability are not ignored
+            #future_states, _ = act.get_possible_resulting_states(s)
+            #s = random.choice(future_states)
             visited.append(s)
             
-            if len(visited) > len(self.states) * 10:#self.max_trial_length:
+            if len(visited) > self.max_trial_length:
                 break
         s = visited.pop()
         while self._check_solved(s) and visited:
@@ -168,14 +191,11 @@ class LRTDP:
         while open:
             s = open.pop()
             closed.append(s)
-            if len(self._get_applicable_actions(s)) == 0:
-                flag = False
-                continue
             residual = self.state_values[s] - self.Q(s, self.policy(s))
             if abs(residual) > self.bellman_error_margin:
                 flag = False
             else:
-                successor_states, _ = get_successor_states(s, self.actions)
+                successor_states, _ = self._get_successor_states(s)
                 for ns in successor_states:
                     if not self.solved_states[ns] and ns not in open and ns not in closed:
                         open.append(ns)
@@ -200,22 +220,18 @@ class LRTDP:
 
 
     def Q(self, s, a):
-        sucessors, _ = get_successor_states(s, self.actions)
-        if sucessors is None:
-            # If there are no successor states (aka the state is absorbing) we consider the state solved.
-            return 0
         q = 0
         future_states, probs = a.get_possible_resulting_states(s)
         for i, ns in enumerate(future_states):
             reward: float = 0.0
             if is_goal(ns, self.parser.positive_goals, self.parser.negative_goals):
-                reward = 10.0
+                reward = self.GOAL_REWARD
             q += probs[i] * (reward + self.discount_rate * self.state_values[ns])
         return q
 
 
     def policy(self, s):
-        action_list = get_applicable_actions(s, self.actions, self.parser.positive_goals, self.parser.negative_goals)
+        action_list = self._get_applicable_actions(s, randomizing=False)
         if len(action_list) == 0:
             return None
         return max(action_list, key=lambda a: self.Q(s, a))
@@ -232,11 +248,8 @@ class LRTDP:
 
 
 if __name__ == "__main__":
-    from ..heuristics.lm_cut import LMCutHeuristic
-    from ..heuristics.hmax import HMax
-
-    domain_file = 'problems/deterministic_blocksworld/domain.pddl'
-    problem_file = 'problems/deterministic_blocksworld/pb3.pddl'
+    domain_file = 'problems/blocksworld/domain.pddl'
+    problem_file = 'problems/blocksworld/5blocks.pddl'
 
     parser: Parser = Parser()
     parser.scan_tokens(domain_file)
@@ -244,10 +257,7 @@ if __name__ == "__main__":
     parser.parse_domain(domain_file)
     parser.parse_problem(problem_file)
 
-    lmcut = LMCutHeuristic(parser)
-    hmax = HMax(parser)
-
-    lrtdp = LRTDP(parser, lmcut)
+    lrtdp = LRTDP(parser)
     lrtdp.execute()
 
     s = parser.state
