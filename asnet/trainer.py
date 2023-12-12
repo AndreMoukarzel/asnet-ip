@@ -46,9 +46,9 @@ class Trainer:
         self.info['problems'] = [{problem_files[0]: self.helpers[0].info}]
         if len(problem_files) > 1:
             for prob_file in problem_files[1:]:
-                helper = TrainingHelper(domain_file, prob_file, instance_asnet=False) 
+                helper = TrainingHelper(domain_file, prob_file)
                 self.helpers.append(helper)
-                self.info['problems'].append({prob_file, helper.info})
+                self.info['problems'].append({prob_file: helper.info})
         
         self.info['validation_problem'] = {}
         if validation_problem_file != '':
@@ -56,7 +56,7 @@ class Trainer:
             self.info['validation_problem'] = {validation_problem_file, self.val_helper.info}
     
 
-    def _check_planning_success(self, model):#shared_weights: Dict[str, np.array]) -> bool:
+    def _check_planning_success(self) -> bool:
         """Returns if the ASNet's planning was successful.
         
         If a validation problem is defined, returns true if the ASNet sucessfully
@@ -76,7 +76,7 @@ class Trainer:
         # If a validation problem is defined, getting to the goal of the
         # validation problem is enough
         if hasattr(self, 'val_helper'):
-            #self.val_helper.set_model_weights(shared_weights)
+            model = self.val_helper.get_model()
             states, _ = self.val_helper.run_policy(self.val_helper.init_state, model)
             if self.val_helper.is_goal(states[-1]):
                 return True
@@ -85,11 +85,21 @@ class Trainer:
         # If no validation problem is defined, we check if the weights are
         # capable of reaching the goal of all training problems
         for helper in self.helpers:
-            #helper.set_model_weights(shared_weights)
+            model = helper.get_model()
             states, _ = helper.run_policy(helper.init_state, model)
             if not helper.is_goal(states[-1]):
                 return False
         return True
+    
+
+    def update_helpers_weights(self):
+        # Assumes the most recently trained helper was the last in list
+        weights = self.helpers[-1].get_model_weights() # Get weights of previous helper
+        for helper in self.helpers:
+            helper.set_model_weights(weights)
+        
+        if hasattr(self, 'val_helper'):
+            self.val_helper.set_model_weights(weights)
     
 
     def train(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
@@ -129,15 +139,22 @@ class Trainer:
         try:
             for i in tqdm(range(exploration_loops)):
                 for i, helper in enumerate(self.helpers):
+                    # Updates model with latest trained weights
+                    weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
+                    helper.set_model_weights(weights)
+                    model = helper.get_model()
+
                     converted_states, converted_actions = helper.generate_training_inputs(model, verbose=verbose)
                     minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
-
+                    
                     history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+
                     histories[i].append(history)
 
                 self.info["training_iterations"] = i
                 # Custom Early Stopping
-                if self._check_planning_success(model):
+                self.update_helpers_weights()
+                if self._check_planning_success():
                     consecutive_solved += 1
                     if consecutive_solved >= 20:
                         print(f"Reached goal in {20} consecutive iterations.")
@@ -150,6 +167,8 @@ class Trainer:
 
         toc = time.process_time()
         self.info["training_time"] = toc-tic
+        
+        self.update_helpers_weights()
         shared_weights = self.helpers[0].get_model_weights()
         return histories, shared_weights
 
@@ -177,10 +196,8 @@ def execute(domain, problems, valid: str, save: str, verbose: int):
     print("Instancing ASNets")
     trainer = Trainer(domain, problems, valid)
     print("Starting Training...")
-    tic = time.process_time()
     _, weights = trainer.train(verbose=verbose)
-    toc = time.process_time()
-    print(f"Training concluded {toc-tic}s")
+    print(f"Training concluded in {trainer.info['training_time']}s")
 
     if save == '':
         save = domain.split('/')[-2]
