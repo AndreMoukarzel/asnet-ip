@@ -49,4 +49,12 @@ def get_related_propositions(action) -> Set[Tuple[str]]:
     for prop_effect in action.del_effects:
         for pred in prop_effect:
             all_predicates.append(pred)
-    return set(all_predicates)
+
+    # Removes equality predicates. Since they are static, they are not relevant
+    # to the network's training.
+    cleaned_predicates = []
+    for pred in all_predicates:
+        if not 'equal' in pred[0]:
+            cleaned_predicates.append(pred)
+
+    return set(cleaned_predicates)
