@@ -124,7 +124,7 @@ class LMCutHeuristic(HMax):
         # first compute hmax starting from the current state
         self._compute_hmax(state)
         if goal_state.heuristic_value == float("inf"):
-            return float("inf")
+            return float("inf"), []
         while goal_state.heuristic_value != 0:
             # next find an appropriate cut
             # first calculate the goal plateau

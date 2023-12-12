@@ -243,6 +243,8 @@ class LRTDP:
             if is_goal(s, self.parser.positive_goals, self.parser.negative_goals):
                 return True
             act = self.policy(s)
+            if act is None:
+                return False
             s = act.apply(s)
         return False
 
