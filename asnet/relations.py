@@ -21,7 +21,7 @@ def groundify_predicate(pred, objects):
         yield([pred.name, assignment])
 
 
-def get_related_propositions(action) -> Set[Tuple[str]]:
+def get_related_propositions(action, include_equality: bool=False) -> Set[Tuple[str]]:
     """Returns all propositions (predicates and their objects) related to
     the action.
     
@@ -49,6 +49,9 @@ def get_related_propositions(action) -> Set[Tuple[str]]:
     for prop_effect in action.del_effects:
         for pred in prop_effect:
             all_predicates.append(pred)
+    
+    if include_equality:
+        return all_predicates
 
     # Removes equality predicates. Since they are static, they are not relevant
     # to the network's training.
