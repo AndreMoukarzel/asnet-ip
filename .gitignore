@@ -2,6 +2,10 @@ asnet/*.jpg
 data/*.json
 info/*.json
 
+# Ignore problem instances, but not the domain definitions and generation scripts
+problems/*/*.pddl
+!problems/*/domain.pddl
+
 # VS Code
 .vscode
 
