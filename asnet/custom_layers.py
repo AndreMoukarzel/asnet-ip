@@ -117,7 +117,9 @@ class PropositionModule(Layer):
         for connections in related_connections:
             # When multiple predicates are related, we pool them into a single value with max pooling
             self.pooling_filters.append(build_connections_layer(connections))
-        self.solo_filter = build_connections_layer(unrelated_connections) # We also filter out all relevant predicates with no relations to others
+        self.solo_filter = None
+        if unrelated_connections:
+            self.solo_filter = build_connections_layer(unrelated_connections) # We also filter out all relevant predicates with no relations to others
         self.concat_shape = (None, len(related_connections) + len(unrelated_connections))
         self.neuron = Dense(1)
 
@@ -133,7 +135,8 @@ class PropositionModule(Layer):
 
             pooled_inputs.append(pool)
         
-        pooled_inputs.append(self.solo_filter(input))
+        if self.solo_filter:
+            pooled_inputs.append(self.solo_filter(input))
         x = tf.concat(pooled_inputs, axis=-1)
         return self.neuron(x)
 

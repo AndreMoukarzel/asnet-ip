@@ -99,8 +99,9 @@ class JustificationGraph:
         self.operators["GOAL OPERATOR"]: RelaxedOperator = RelaxedOperator("GOAL OPERATOR", True)
         self.add_effect_to_operator(self.facts["GOAL"], self.operators["GOAL OPERATOR"])
         for fact in parser.positive_goals:
-            assert fact in self.facts
-            self.add_precondition_to_operator(self.facts[fact], self.operators["GOAL OPERATOR"])
+            if fact in self.facts:
+                # If the fact in goal was not included, it is ALWAYS TRUE
+                self.add_precondition_to_operator(self.facts[fact], self.operators["GOAL OPERATOR"])
     
 
     @staticmethod
