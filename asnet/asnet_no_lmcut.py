@@ -640,7 +640,7 @@ def share_layer_weights(layer1, layer2) -> None:
 
 @click.command()
 @click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/deterministic_blocksworld/domain.pddl')
-@click.option("--problem", "-p", type=str, help="Path to a problem's instance PPDDL file.", default='problems/deterministic_blocksworld/pb3.pddl')
+@click.option("--problem", "-p", type=str, help="Path to a problem's instance PPDDL file.", default='problems/deterministic_blocksworld/pb3_p0.pddl')
 @click.option("--layer_num", "-l", type=int, help="Number of layers in the ASNet.", default=2)
 @click.option("--image_name", "-img", type=str, help="Save path of the ASNet plot. By default does not save a plot.", default='')
 @click.option("--debug", is_flag=True, help="Debug prints. Off by default.")

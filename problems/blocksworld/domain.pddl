@@ -1,4 +1,4 @@
-(define (domain blocks-domain)
+(define (domain blocksworld)
   (:requirements :probabilistic-effects :conditional-effects :equality :typing :rewards)
   (:types block)
   (:predicates (holding ?b - block) (emptyhand) (on-table ?b - block) (on ?b1 ?b2 - block) (clear ?b - block))

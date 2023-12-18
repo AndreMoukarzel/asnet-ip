@@ -1,6 +1,0 @@
-(define (problem pb5_p00)
-  (:domain blocksworld)
-  (:objects a b c d e - block)
-  (:init (onTable a) (onTable b) (onTable c) (onTable d) (onTable e)
-    (clear a) (clear b) (clear c) (clear d) (clear e))
-  (:goal (and (on a b) (on b c) (on c d) (on d e))))

@@ -83,7 +83,7 @@ def generate_problem(block_num: int) -> str:
 
 
 if __name__ == '__main__':
-    for block_num in range(3, 40):
+    for block_num in range(3, 20):
         for i in range(10):
             problem = generate_problem(block_num)
             with open(f"pb{block_num}_p{i}.pddl", "w") as file:

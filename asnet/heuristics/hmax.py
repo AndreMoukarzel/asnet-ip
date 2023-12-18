@@ -73,7 +73,7 @@ class HMax(JustificationGraph):
 
 if __name__ == "__main__":
     domain_file = 'problems/deterministic_blocksworld/domain.pddl'
-    problem_file = 'problems/deterministic_blocksworld/pb3.pddl'
+    problem_file = 'problems/deterministic_blocksworld/pb3_p0.pddl'
 
     parser: Parser = Parser()
     parser.scan_tokens(domain_file)

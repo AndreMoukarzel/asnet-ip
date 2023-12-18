@@ -56,7 +56,7 @@ def pred_to_str(pred) -> str:
 
 def problem_to_pddl(blocks, init_state, goal_state, problem_name: str) -> str:
     return f"""(define (problem {problem_name})
-  (:domain blocksworld)
+  (:domain det-blocksworld)
   (:objects {' '.join(blocks)} - block)
   (:init {' '.join([pred_to_str(pred) for pred in init_state])})
   (:goal (and {' '.join([pred_to_str(pred) for pred in goal_state])}))

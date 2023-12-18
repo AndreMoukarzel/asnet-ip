@@ -1,5 +1,0 @@
-(define (problem pb2)
-  (:domain blocksworld)
-  (:objects a b c - block)
-  (:init (onTable a) (onTable b) (on c b) (clear a) (clear c))
-  (:goal (and (on a b) (on b c))))
