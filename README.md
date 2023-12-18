@@ -38,6 +38,9 @@ This repository is structured as follows:
 
 # Execution
 
+If you are trying to use this package directly, it may be useful to generate problem instances as described [here](https://github.com/AndreMoukarzel/asnet-ip/blob/main/problems/PROBLEMS.md) 
+in order to create the testing problems used by default by the scripts.
+
 Some classes from the package can be executed by calling them directly. In this cases, instructions for each are as below:
 
 
