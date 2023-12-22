@@ -45,7 +45,9 @@ class TrainingHelper:
         Overwrite the instanced ASNet's weights with the specified weights.
     """
 
-    def __init__(self, domain_file: str, problem_file: str, instance_asnet: bool = True, lmcut: bool = True, solve: bool=True) -> None:
+    def __init__(self, domain_file: str, problem_file: str,
+                 instance_asnet: bool = True, asnet_layers: int=2, lmcut: bool = True, solve: bool=True
+                 ) -> None:
         """
         Parameters
         ----------
@@ -55,16 +57,18 @@ class TrainingHelper:
             IPPDDL file specifying the problem instance
         instance_asnet: bool, Optional
             If it should instance an ASNet's network. By default is True.
+        asnet_layers: int, Optional
+            Number of layers the ASNets will have.
         lmcut: bool, Optional
             If the instanced ASNet should use the LM-Cut heuristic. By default is true.
         """
         self.info: dict = {} # Saves information about training
         self.lmcut: bool = lmcut
         if lmcut:
-            self.net: ASNet = ASNet(domain_file, problem_file, instance_network=instance_asnet)
+            self.net: ASNet = ASNet(domain_file, problem_file, layer_num=asnet_layers, instance_network=instance_asnet)
             self.lm_heuristic = LMCutHeuristic(self.net.parser)
         else:
-            self.net: ASNetNoLMCut = ASNetNoLMCut(domain_file, problem_file, instance_network=instance_asnet)
+            self.net: ASNetNoLMCut = ASNetNoLMCut(domain_file, problem_file, layer_num=asnet_layers, instance_network=instance_asnet)
         if instance_asnet:
             self.net.compile()
         self.parser: Parser = self.net.parser
@@ -341,7 +345,8 @@ class TrainingHelper:
         return states
     
 
-    def generate_training_inputs(self, model = None, verbose: int = 0) -> Tuple[List[List[float]], List[List[float]]]:
+    def generate_training_inputs(self, model = None, policy_exploration: bool=True, verbose: int = 0
+                                 ) -> Tuple[List[List[float]], List[List[float]]]:
         """Generates the training states and their corresponding 'ideal' actions
         and converts them to a format inputable into an ASNet, so they can be
         used for training.
@@ -351,6 +356,9 @@ class TrainingHelper:
         model : keras.Model, optional
             Model to be used to run policy on problem instance. If none is given,
             uses the instanced model.
+        policy_exploration: bool, optional
+            If the model's current policy should be used to explore states to be
+            used as training inputs.
         verbose: int, optional
             Verbosity mode when running the ASNet's policy. 0 = silent,
             1 = progress bar, 2 = one line per epoch.
@@ -367,12 +375,17 @@ class TrainingHelper:
         states: List[str] = list(self.all_states)
         state_best_actions: List[tuple] = self._best_actions_by_state()
         # Runs policy in search of states to be explored in training
-        explored_states: List[str] = self.run_policy(self.init_state, model, verbose)[0]
+        explored_states: List[str] = []
         rollout_states: List[str] = []
-        # Rollouts the teacher policy from each state found from the model's run,
-        # to be certain that there will be optimal states in the training
-        for state in explored_states:
-            rollout_states += self.teacher_rollout(state, states, state_best_actions)
+        if policy_exploration:
+            explored_states = self.run_policy(self.init_state, model, verbose)[0]
+            # Rollouts the teacher policy from each state found from the model's run,
+            # to be certain that there will be optimal states in the training
+            for state in explored_states:
+                rollout_states += self.teacher_rollout(state, states, state_best_actions)
+        else:
+            # Since no policy was run, rollouts the teacher policy from the initial state
+            rollout_states += self.teacher_rollout(self.init_state, states, state_best_actions)
         training_states: List[str] = explored_states + rollout_states
 
         # Gets "correct" action according to Teacher Planner for each selected state

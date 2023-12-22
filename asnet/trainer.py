@@ -26,7 +26,9 @@ class Trainer:
         trained weights.
     """
 
-    def __init__(self, domain_file: str, problem_files: List[str], validation_problem_file: str='') -> None:
+    def __init__(self, domain_file: str, problem_files: List[str],
+                 validation_problem_file: str='', asnet_layers: int=2, policy_exploration: bool=True
+                 ) -> None:
         """
         Parameters
         ----------
@@ -41,19 +43,23 @@ class Trainer:
             _check_planning_success()
         """
         self.info: dict = {} # Saves information about training
+        self.info['asnet_layers'] = asnet_layers
         self.info['domain'] = domain_file
-        self.helpers: List[TrainingHelper] = [TrainingHelper(domain_file, problem_files[0])]
+        tic = time.process_time()
+        self.helpers: List[TrainingHelper] = [TrainingHelper(domain_file, problem_files[0], asnet_layers=asnet_layers)]
         self.info['problems'] = [{problem_files[0]: self.helpers[0].info}]
         if len(problem_files) > 1:
             for prob_file in problem_files[1:]:
-                helper = TrainingHelper(domain_file, prob_file)
+                helper = TrainingHelper(domain_file, prob_file, asnet_layers=asnet_layers)
                 self.helpers.append(helper)
                 self.info['problems'].append({prob_file: helper.info})
         
         self.info['validation_problem'] = {}
         if validation_problem_file != '':
-            self.val_helper = TrainingHelper(domain_file, validation_problem_file, instance_asnet=False)
+            self.val_helper = TrainingHelper(domain_file, validation_problem_file, asnet_layers=asnet_layers)
             self.info['validation_problem'] = {validation_problem_file, self.val_helper.info}
+        toc = time.process_time()
+        self.info["instantiation_time"] = toc-tic
     
 
     def _check_planning_success(self) -> bool:
@@ -102,7 +108,91 @@ class Trainer:
             self.val_helper.set_model_weights(weights)
     
 
-    def train(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
+    def train_with_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
+        # Configures Early Stopping configuration for training
+        callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
+
+        model = self.helpers[0].get_model()
+
+        consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
+        histories: list = [[]] * len(self.helpers)
+        try:
+            for i in tqdm(range(exploration_loops)):
+                for i, helper in enumerate(self.helpers):
+                    # Updates model with latest trained weights
+                    weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
+                    helper.set_model_weights(weights)
+                    model = helper.get_model()
+
+                    converted_states, converted_actions = helper.generate_training_inputs(model, self.info['policy_exploration'], verbose=verbose)
+                    minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
+                    
+                    history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+
+                    histories[i].append(history)
+
+                self.info["training_iterations"] = i
+                # Custom Early Stopping
+                self.update_helpers_weights()
+                if self._check_planning_success():
+                    consecutive_solved += 1
+                    if consecutive_solved >= 20:
+                        print(f"Reached goal in {20} consecutive iterations.")
+                        self.info["early_solving"] = True
+                        break
+                else:
+                    consecutive_solved = 0
+        except KeyboardInterrupt:
+            self.info["early_stopped"] = True
+        
+        return histories
+    
+
+    def train_without_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
+         # Configures Early Stopping configuration for training
+        callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
+
+        model = self.helpers[0].get_model()
+
+        consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
+        histories: list = [[]] * len(self.helpers)
+        training_inputs = []
+        for helper in self.helpers:
+            converted_states, converted_actions = helper.generate_training_inputs(policy_exploration=self.info['policy_exploration'])
+            training_inputs.append((converted_states, converted_actions))
+        try:
+            for i in tqdm(range(exploration_loops)):
+                for i, helper in enumerate(self.helpers):
+                    # Updates model with latest trained weights
+                    weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
+                    helper.set_model_weights(weights)
+                    model = helper.get_model()
+
+                    converted_states, converted_actions = training_inputs[i]
+                    minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
+                    
+                    history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
+
+                    histories[i].append(history)
+
+                self.info["training_iterations"] = i
+                # Custom Early Stopping
+                self.update_helpers_weights()
+                if self._check_planning_success():
+                    consecutive_solved += 1
+                    if consecutive_solved >= 20:
+                        print(f"Reached goal in {20} consecutive iterations.")
+                        self.info["early_solving"] = True
+                        break
+                else:
+                    consecutive_solved = 0
+        except KeyboardInterrupt:
+            self.info["early_stopped"] = True
+        
+        return histories
+
+
+    def train(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, policy_exploration: bool=True) -> list:
         """Trains an ASNet in the defined problem instances.
 
         Training will be stopped early if _check_planning_success() returns true
@@ -126,44 +216,17 @@ class Trainer:
             of an exploration loop, as well as the final shared weights from
             the model.
         """
-        # Configures Early Stopping configuration for training
-        callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
+        self.info['policy_exploration'] = policy_exploration
 
-        model = self.helpers[0].get_model()
-
-        consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
         self.info["early_solving"] = False
         self.info["early_stopped"] = False
         tic = time.process_time()
-        try:
-            for i in tqdm(range(exploration_loops)):
-                for i, helper in enumerate(self.helpers):
-                    # Updates model with latest trained weights
-                    weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
-                    helper.set_model_weights(weights)
-                    model = helper.get_model()
 
-                    converted_states, converted_actions = helper.generate_training_inputs(model, verbose=verbose)
-                    minibatch_size: int = len(converted_states)//2 # Hard-coded batch size to be half of training set
-                    
-                    history = model.fit(converted_states, converted_actions, epochs=train_epochs, batch_size=minibatch_size, callbacks=[callback], verbose=verbose)
-
-                    histories[i].append(history)
-
-                self.info["training_iterations"] = i
-                # Custom Early Stopping
-                self.update_helpers_weights()
-                if self._check_planning_success():
-                    consecutive_solved += 1
-                    if consecutive_solved >= 20:
-                        print(f"Reached goal in {20} consecutive iterations.")
-                        self.info["early_solving"] = True
-                        break
-                else:
-                    consecutive_solved = 0
-        except KeyboardInterrupt:
-            self.info["early_stopped"] = True
+        if self.info['policy_exploration']:
+            histories = self.train_with_exploration(exploration_loops, train_epochs, verbose)
+        else:
+            histories = self.train_without_exploration(exploration_loops, train_epochs, verbose)
 
         toc = time.process_time()
         self.info["training_time"] = toc-tic
@@ -181,13 +244,22 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 @click.command()
-@click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/deterministic_blocksworld/domain.pddl')
+@click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/blocksworld/domain.pddl')#default='problems/deterministic_blocksworld/domain.pddl')
 @click.option(
     "--problems", "-p", type=str, help="Path to (multiple) problem's instance PPDDL files.", multiple=True,
     default=[
-        'problems/deterministic_blocksworld/pb5_p00.pddl',
-        'problems/deterministic_blocksworld/pb5_p01.pddl',
-        'problems/deterministic_blocksworld/pb5_p02.pddl'
+#        'problems/deterministic_blocksworld/pb5_p0.pddl',
+#        'problems/deterministic_blocksworld/pb5_p1.pddl',
+#        'problems/deterministic_blocksworld/pb5_p2.pddl',
+#        'problems/deterministic_blocksworld/pb5_p3.pddl',
+#        'problems/deterministic_blocksworld/pb5_p4.pddl',
+        'problems/blocksworld/pb5_p0.pddl',
+        'problems/blocksworld/pb5_p1.pddl',
+        'problems/blocksworld/pb5_p2.pddl',
+        'problems/blocksworld/pb5_p3.pddl',
+        'problems/blocksworld/pb5_p4.pddl',
+        'problems/blocksworld/pb5_p5.pddl',
+        'problems/blocksworld/pb5_p6.pddl',
     ])
 @click.option("--valid", "-v", type=str, help="Path to problem's instance PPDDL files used for training's validation.", default='')
 @click.option("--save", "-s", type=str, help="Name of file with saved weights after training. If none is set, used the domain's name.", default='')
@@ -196,7 +268,7 @@ def execute(domain, problems, valid: str, save: str, verbose: int):
     print("Instancing ASNets")
     trainer = Trainer(domain, problems, valid)
     print("Starting Training...")
-    _, weights = trainer.train(verbose=verbose)
+    _, weights = trainer.train(verbose=verbose, policy_exploration=False)
     print(f"Training concluded in {trainer.info['training_time']}s")
 
     if save == '':
