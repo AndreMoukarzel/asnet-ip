@@ -7,6 +7,7 @@ The following code used inspiration from markkho's msdm package implementation
 import random
 
 from ..heuristics.null_heuristic import NullHeuristic
+from ..sysadmin.auxiliary import get_connections
 
 from ippddl_parser.parser import Parser
 from ippddl_parser.value_iteration import ValueIterator
@@ -80,9 +81,13 @@ class LRTDP:
     
 
     def _get_all_actions(self):
+        connections = None
+        if 'sysadmin' in self.parser.domain_name: # Special case of SysAdmin domain
+            connections = get_connections(self.parser)
+
         ground_actions = []
         for action in self.parser.actions:
-            for act in action.groundify(self.parser.objects, self.parser.types):
+            for act in action.groundify(self.parser.objects, self.parser.types, connections):
                 # Does not add actions invalidated by equality preconditions
                 invalid_equalty: bool = False
                 for precond in act.negative_preconditions:

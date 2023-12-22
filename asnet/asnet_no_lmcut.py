@@ -18,6 +18,7 @@ import click
 
 from .custom_layers import Output, ActionModule, PropositionModule
 from .relations import get_related_propositions
+from .sysadmin.auxiliary import get_connections
 
 
 
@@ -105,9 +106,13 @@ class ASNetNoLMCut:
 
         Returned actions are instances of ippddl_parser's Action objects.
         """
+        connections = None
+        if 'sysadmin' in self.parser.domain_name:
+            connections = get_connections(self.parser)
+
         ground_actions = []
         for action in self.parser.actions:
-            for act in action.groundify(self.parser.objects, self.parser.types):
+            for act in action.groundify(self.parser.objects, self.parser.types, connections):
                 # Does not add actions invalidated by equality preconditions
                 invalid_equalty: bool = False
                 for precond in act.negative_preconditions:

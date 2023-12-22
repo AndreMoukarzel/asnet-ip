@@ -5,6 +5,8 @@ from typing import List, Tuple, Dict
 
 from ippddl_parser.parser import Parser
 
+from ..sysadmin.auxiliary import get_connections
+
 
 class RelaxedFact:
     """Object representing a relaxed fact and its related operators in a
@@ -71,9 +73,14 @@ class JustificationGraph:
         self.reachable_facts: set = set()
         self.facts: Dict[Tuple[str], RelaxedFact] = {}
         self.operators: Dict[str, RelaxedOperator] = {}
+
+        connections = None
+        if 'sysadmin' in parser.domain_name: # Special case of SysAdmin domain
+            connections = get_connections(self.parser)
+
         # Removes all delete effects from considered actions, since this is a delete-relaxed heuristic algorithm.
         for action in parser.actions:
-            for act in action.groundify(parser.objects, parser.types):
+            for act in action.groundify(parser.objects, parser.types, connections):
                 act_name: Tuple[str] = (act.name, act.parameters)
                 self.operators[act_name] = RelaxedOperator(act_name)
 
