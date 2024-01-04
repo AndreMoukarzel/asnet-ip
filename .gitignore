@@ -5,6 +5,7 @@ info/*.json
 # Ignore problem instances, but not the domain definitions and generation scripts
 problems/*/*.pddl
 !problems/*/domain.pddl
+!problems/*/domain_ip.pddl
 
 # VS Code
 .vscode
