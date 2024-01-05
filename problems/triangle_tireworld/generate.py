@@ -1,3 +1,5 @@
+# Triangle Tireworld problem generator
+import sys
 
 
 def generate_problem(shortest_path: int) -> str:
@@ -43,7 +45,11 @@ def generate_problem(shortest_path: int) -> str:
 
 
 if __name__ == '__main__':
-    for shortest_path in range(3, 31, 2):
+    max_size: int = 30
+    if len(sys.argv) > 1:
+        max_size = sys.argv[1]
+    
+    for shortest_path in range(3, max_size + 1, 2):
         problem = generate_problem(shortest_path)
         with open(f"pb{shortest_path}.pddl", "w") as file:
             file.write(problem)

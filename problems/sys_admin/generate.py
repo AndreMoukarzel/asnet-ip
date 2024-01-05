@@ -1,4 +1,5 @@
-
+# SysAdmin problem generator
+import sys
 
 def generate_problem(comps_num: int) -> str:
     line_skip = '\n\t\t'
@@ -16,7 +17,11 @@ def generate_problem(comps_num: int) -> str:
 
 
 if __name__ == '__main__':
-    for comps_num in range(2, 31):
+    max_size: int = 30
+    if len(sys.argv) > 1:
+        max_size = sys.argv[1]
+    
+    for comps_num in range(2, max_size + 1):
         problem = generate_problem(comps_num)
         with open(f"pb{comps_num}.pddl", "w") as file:
             file.write(problem)
