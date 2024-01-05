@@ -27,7 +27,7 @@ class Trainer:
     """
 
     def __init__(self, domain_file: str, problem_files: List[str],
-                 validation_problem_file: str='', asnet_layers: int=2, policy_exploration: bool=True
+                 validation_problem_file: str='', asnet_layers: int=2
                  ) -> None:
         """
         Parameters
@@ -243,16 +243,26 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
+def train(domain, problems, valid: str='', layers: int=2, policy_exploration: bool=False, save: str='', verbose: int=0):
+    print("Instancing ASNets")
+    trainer = Trainer(domain, problems, valid, asnet_layers=layers)
+    print("Starting Training...")
+    _, weights = trainer.train(verbose=verbose, policy_exploration=policy_exploration)
+    print(f"Training concluded in {trainer.info['training_time']}s")
+
+    if save == '':
+        save = domain.split('/')[-2]
+    with open(f'data/{save}.json', 'w') as f:
+        json.dump(weights, f, cls=NumpyEncoder)
+    with open(f'info/{save}.json', 'w') as f:
+        json.dump(trainer.info, f, cls=NumpyEncoder)
+
+
 @click.command()
-@click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/blocksworld/domain.pddl')#default='problems/deterministic_blocksworld/domain.pddl')
+@click.option("--domain", "-d", type=str, help="Path to the problem's domain PPDDL file.", default='problems/blocksworld/domain.pddl')
 @click.option(
     "--problems", "-p", type=str, help="Path to (multiple) problem's instance PPDDL files.", multiple=True,
     default=[
-#        'problems/deterministic_blocksworld/pb5_p0.pddl',
-#        'problems/deterministic_blocksworld/pb5_p1.pddl',
-#        'problems/deterministic_blocksworld/pb5_p2.pddl',
-#        'problems/deterministic_blocksworld/pb5_p3.pddl',
-#        'problems/deterministic_blocksworld/pb5_p4.pddl',
         'problems/blocksworld/pb5_p0.pddl',
         'problems/blocksworld/pb5_p1.pddl',
         'problems/blocksworld/pb5_p2.pddl',
@@ -262,21 +272,12 @@ class NumpyEncoder(json.JSONEncoder):
         'problems/blocksworld/pb5_p6.pddl',
     ])
 @click.option("--valid", "-v", type=str, help="Path to problem's instance PPDDL files used for training's validation.", default='')
+@click.option("--layers", "-l", type=int, help="Number of layers of the trained ASNets", default=2)
+@click.option("--policy_exploration", "-pe", type=bool, help="If the training should include exploration guided by the trained ASNet's policy or not.", default=False)
 @click.option("--save", "-s", type=str, help="Name of file with saved weights after training. If none is set, used the domain's name.", default='')
 @click.option("--verbose", type=int, help="Debug prints. Off by default.", default=0)
-def execute(domain, problems, valid: str, save: str, verbose: int):
-    print("Instancing ASNets")
-    trainer = Trainer(domain, problems, valid)
-    print("Starting Training...")
-    _, weights = trainer.train(verbose=verbose, policy_exploration=False)
-    print(f"Training concluded in {trainer.info['training_time']}s")
-
-    if save == '':
-        save = domain.split('/')[-2]
-    with open(f'data/{save}.json', 'w') as f:
-        json.dump(weights, f, cls=NumpyEncoder)
-    with open(f'info/{save}.json', 'w') as f:
-        json.dump(trainer.info, f, cls=NumpyEncoder)
+def execute(domain, problems, valid: str, layers: int, policy_exploration: bool, save: str, verbose: int):
+    train(domain, problems, valid, layers, policy_exploration, save, verbose)
 
 
 
