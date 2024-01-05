@@ -14,6 +14,5 @@ setup(
         'tqdm==4.66.1',
         'click==8.1.7',
         'ippddl-parser @ git+https://github.com/AndreMoukarzel/ippddl-parser'
-    ],
-    license="GPLv3"
+    ]
 )
