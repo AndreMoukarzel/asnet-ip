@@ -1,6 +1,7 @@
 from typing import List
 import json
 import time
+import os
 
 from .training_helper import TrainingHelper
 
@@ -108,7 +109,7 @@ class Trainer:
             self.val_helper.set_model_weights(weights)
     
 
-    def train_with_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
+    def train_with_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, save_path: str='/data/models') -> list:
         # Configures Early Stopping configuration for training
         callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
 
@@ -117,7 +118,7 @@ class Trainer:
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
         try:
-            for i in tqdm(range(exploration_loops)):
+            for iter in tqdm(range(exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     # Updates model with latest trained weights
                     weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
@@ -131,7 +132,7 @@ class Trainer:
 
                     histories[i].append(history)
 
-                self.info["training_iterations"] = i
+                self.info["training_iterations"] = iter
                 # Custom Early Stopping
                 self.update_helpers_weights()
                 if self._check_planning_success():
@@ -142,13 +143,17 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
+                    if iter % 10 == 0: # Saves intermediary results each 10 iterations of training
+                        save_path
+                        with open(f'{save_path}/iter{iter}.json', 'w') as f:
+                            json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
         except KeyboardInterrupt:
             self.info["early_stopped"] = True
         
         return histories
     
 
-    def train_without_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0) -> list:
+    def train_without_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, save_path: str='/data/models') -> list:
          # Configures Early Stopping configuration for training
         callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
 
@@ -161,7 +166,7 @@ class Trainer:
             converted_states, converted_actions = helper.generate_training_inputs(policy_exploration=self.info['policy_exploration'])
             training_inputs.append((converted_states, converted_actions))
         try:
-            for i in tqdm(range(exploration_loops)):
+            for iter in tqdm(range(exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     # Updates model with latest trained weights
                     weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
@@ -175,7 +180,7 @@ class Trainer:
 
                     histories[i].append(history)
 
-                self.info["training_iterations"] = i
+                self.info["training_iterations"] = iter
                 # Custom Early Stopping
                 self.update_helpers_weights()
                 if self._check_planning_success():
@@ -186,13 +191,17 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
+                    if iter % 10 == 0: # Saves intermediary results each 10 iterations of training
+                        save_path
+                        with open(f'{save_path}/iter{iter}.json', 'w') as f:
+                            json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
         except KeyboardInterrupt:
             self.info["early_stopped"] = True
         
         return histories
 
 
-    def train(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, policy_exploration: bool=True) -> list:
+    def train(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, policy_exploration: bool=True, save_path: str='/data/models') -> list:
         """Trains an ASNet in the defined problem instances.
 
         Training will be stopped early if _check_planning_success() returns true
@@ -244,14 +253,20 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 def train(domain, problems, valid: str='', layers: int=2, policy_exploration: bool=False, save: str='', verbose: int=0):
+    if save == '':
+        save = domain.split('/')[-2]
+    try: # Creates directory for saving intermediary models
+        os.mkdir(f'data/{save}')
+    except:
+        pass
+    
     print("Instancing ASNets")
     trainer = Trainer(domain, problems, valid, asnet_layers=layers)
     print("Starting Training...")
-    _, weights = trainer.train(verbose=verbose, policy_exploration=policy_exploration)
+    _, weights = trainer.train(verbose=verbose, policy_exploration=policy_exploration, save_path=f'data/{save}')
     print(f"Training concluded in {trainer.info['training_time']}s")
 
-    if save == '':
-        save = domain.split('/')[-2]
+    
     with open(f'data/{save}.json', 'w') as f:
         json.dump(weights, f, cls=NumpyEncoder)
     with open(f'info/{save}.json', 'w') as f:
