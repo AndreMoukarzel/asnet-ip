@@ -76,7 +76,7 @@ class JustificationGraph:
 
         connections = None
         if 'sysadmin' in parser.domain_name: # Special case of SysAdmin domain
-            connections = get_connections(self.parser)
+            connections = get_connections(parser)
 
         # Removes all delete effects from considered actions, since this is a delete-relaxed heuristic algorithm.
         for action in parser.actions:

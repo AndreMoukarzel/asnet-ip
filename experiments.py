@@ -7,12 +7,17 @@ def blocksworld_experiments(dir: str, problems: list, prefix: str):
     problems_3each = problems[:3] + problems[10:13] + problems[20:23] + problems[30:33] + problems[40:43]
 
     train(domain, problems_3each, save=f'{prefix}_3each')
+    train(domain, problems[:20], save=f'{prefix}_0_20')
     train(domain, problems[:40], save=f'{prefix}_0_40')
     train(domain, problems[20:40], save=f'{prefix}_20_40')
-    train(domain, problems[:60], save=f'{prefix}_0_60')
-    train(domain, problems[40:60], save=f'{prefix}_40_60')
-    train(domain, problems[40:60], layers=3, save=f'{prefix}_40_60_3layers')
-    train(domain, problems[40:60], layers=4, save=f'{prefix}_40_60_4layers')
+    #train(domain, problems[:60], save=f'{prefix}_0_60')
+    #train(domain, problems[40:60], save=f'{prefix}_40_60')
+    #train(domain, problems[40:60], layers=3, save=f'{prefix}_40_60_3layers')
+    #train(domain, problems[40:60], layers=4, save=f'{prefix}_40_60_4layers')
+    train(domain, problems_3each, layers=3, save=f'{prefix}_3each_3layers')
+    train(domain, problems[:20], layers=3, save=f'{prefix}_0_20_3layers')
+    train(domain, problems[:40], layers=3, save=f'{prefix}_0_40_3layers')
+    train(domain, problems[20:40], layers=3, save=f'{prefix}_20_40_3layers')
 
 
 def sys_admin_experiments(domain: str, prefix: str):
@@ -44,6 +49,14 @@ def triangle_tireworld_experiments(domain: str, prefix: str):
 
 
 if __name__ == "__main__":
+    # SYSADMIN EXPERIMENTS
+    sys_admin_experiments("problems/sys_admin/domain.pddl", "sa")
+    sys_admin_experiments("problems/sys_admin/domain_ip.pddl", "sa_ip")
+
+    # TRIANGLE TIREWORLD EXPERIMENTS
+    triangle_tireworld_experiments("problems/triangle_tireworld/domain.pddl", "tt")
+    triangle_tireworld_experiments("problems/triangle_tireworld/domain_ip.pddl", "tt_ip")
+
     # BLOCKSWORLD EXPERIMENTS
     blocksworld_det = "problems/deterministic_blocksworld/"
     blocksworld = "problems/blocksworld/"
@@ -52,7 +65,7 @@ if __name__ == "__main__":
     blocksworld_det_problems = []
     blocksworld_problems = []
     blocksworld_ip_problems = []
-    for i in range(3, 40):
+    for i in range(3, 30):
         for j in range(10):
             blocksworld_det_problems.append(blocksworld_det + f'pb{i}_p{j}.pddl')
             blocksworld_problems.append(blocksworld + f'pb{i}_p{j}.pddl')
@@ -62,10 +75,4 @@ if __name__ == "__main__":
     blocksworld_experiments(blocksworld, blocksworld_problems, 'bw')
     blocksworld_experiments(blocksworld_ip, blocksworld_ip_problems, 'bw_ip')
 
-    # SYSADMIN EXPERIMENTS
-    sys_admin_experiments("problems/sys_admin/domain.pddl", "sa")
-    sys_admin_experiments("problems/sys_admin/domain_ip.pddl", "sa_ip")
-
-    # TRIANGLE TIREWORLD EXPERIMENTS
-    sys_admin_experiments("problems/triangle_tireworld/domain.pddl", "tt")
-    sys_admin_experiments("problems/triangle_tireworld/domain_ip.pddl", "tt_ip")
+    
