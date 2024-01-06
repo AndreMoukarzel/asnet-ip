@@ -1,5 +1,6 @@
 asnet/*.jpg
 data/*.json
+data/*/*.json
 info/*.json
 
 # Ignore problem instances, but not the domain definitions and generation scripts

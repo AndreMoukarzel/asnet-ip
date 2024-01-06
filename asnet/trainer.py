@@ -143,7 +143,7 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
-                    if iter % 10 == 0: # Saves intermediary results each 10 iterations of training
+                    if iter > 0 and iter % 10 == 0: # Saves intermediary results each 10 iterations of training
                         save_path
                         with open(f'{save_path}/iter{iter}.json', 'w') as f:
                             json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
@@ -191,7 +191,7 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
-                    if iter % 10 == 0: # Saves intermediary results each 10 iterations of training
+                    if iter > 0 and iter % 10 == 0: # Saves intermediary results each 10 iterations of training
                         save_path
                         with open(f'{save_path}/iter{iter}.json', 'w') as f:
                             json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
@@ -233,9 +233,9 @@ class Trainer:
         tic = time.process_time()
 
         if self.info['policy_exploration']:
-            histories = self.train_with_exploration(exploration_loops, train_epochs, verbose)
+            histories = self.train_with_exploration(exploration_loops, train_epochs, verbose, save_path)
         else:
-            histories = self.train_without_exploration(exploration_loops, train_epochs, verbose)
+            histories = self.train_without_exploration(exploration_loops, train_epochs, verbose, save_path)
 
         toc = time.process_time()
         self.info["training_time"] = toc-tic
