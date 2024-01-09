@@ -109,16 +109,37 @@ class Trainer:
             self.val_helper.set_model_weights(weights)
     
 
+    def get_starting_iteration(self, save_path: str):
+        if not os.path.isdir(save_path):
+            return 0 # Save path not found
+        files = [f.split('.json')[0] for f in os.listdir(save_path) if '.json' in f]
+        if len(files) == 0:
+            return 0 # No intermediary saved model found, start from beginning
+        iter_values = [int(f.split('iter')[-1]) for f in files]
+        print(f'Starting training from iteration {max(iter_values) + 1}')
+        return max(iter_values) + 1 # Starts from the next iteration after the saved models'
+
+
+    def save_intermediary_weights(self, iteration: int, save_path: str):
+        if iteration > 0 and iteration % 10 == 0: # Saves intermediary results each 10 iterations of training
+            with open(f'{save_path}/iter{iteration}.json', 'w') as f:
+                json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
+    
+
     def train_with_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, save_path: str='/data/models') -> list:
         # Configures Early Stopping configuration for training
         callback = EarlyStopping(monitor='loss', patience=20, min_delta=0.001)
 
         model = self.helpers[0].get_model()
 
+        self.info['starting_iteration'] = self.get_starting_iteration(save_path)
+        if self.info['starting_iteration'] > 0:
+            self.helpers[0].set_model_weights_from_file(f"{save_path}/iter{self.info['starting_iteration'] - 1}.json")
+
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
         try:
-            for iter in tqdm(range(exploration_loops)):
+            for iter in tqdm(range(self.get_starting_iteration(save_path), exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     # Updates model with latest trained weights
                     weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
@@ -143,10 +164,7 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
-                    if iter > 0 and iter % 10 == 0: # Saves intermediary results each 10 iterations of training
-                        save_path
-                        with open(f'{save_path}/iter{iter}.json', 'w') as f:
-                            json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
+                    self.save_intermediary_weights(iter, save_path)
         except KeyboardInterrupt:
             self.info["early_stopped"] = True
         
@@ -166,7 +184,7 @@ class Trainer:
             converted_states, converted_actions = helper.generate_training_inputs(policy_exploration=self.info['policy_exploration'])
             training_inputs.append((converted_states, converted_actions))
         try:
-            for iter in tqdm(range(exploration_loops)):
+            for iter in tqdm(range(self.get_starting_iteration(save_path), exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     # Updates model with latest trained weights
                     weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
@@ -191,10 +209,7 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
-                    if iter > 0 and iter % 10 == 0: # Saves intermediary results each 10 iterations of training
-                        save_path
-                        with open(f'{save_path}/iter{iter}.json', 'w') as f:
-                            json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
+                    self.save_intermediary_weights(iter, save_path)
         except KeyboardInterrupt:
             self.info["early_stopped"] = True
         

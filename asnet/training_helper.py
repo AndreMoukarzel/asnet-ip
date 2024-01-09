@@ -1,5 +1,6 @@
 from typing import List, Tuple, Dict, FrozenSet
 import time
+import json
 
 from .asnet import ASNet
 from .asnet_no_lmcut import ASNetNoLMCut
@@ -424,4 +425,26 @@ class TrainingHelper:
             It is expected that the weights variable will be originary from
             a compatible ASNet, based on a problem of the same domain.
         """
+        set_lifted_weights(self.net, weights)
+    
+
+    def set_model_weights_from_file(self, file_path: str) -> None:
+        """Overwrites the weights and biases of the instanced ASNet by the
+        received weights
+
+        Parameters
+        ----------
+        weights: Dict[str, np.array]
+            Weights and Biases such as obtained by the method get_model_weights().
+            It is expected that the weights variable will be originary from
+            a compatible ASNet, based on a problem of the same domain.
+        """
+        weights: dict = {}
+        with open(file_path, 'r') as f:
+            file_weights: dict = json.load(f)
+            for key, value in file_weights.items():
+                output_weights = np.array([np.array(val) for val in value[0]])
+                bias = np.array(value[1])
+                weights[key] = (output_weights, bias)
+
         set_lifted_weights(self.net, weights)
