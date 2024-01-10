@@ -293,13 +293,13 @@ def train(domain, problems, valid: str='', layers: int=2, policy_exploration: bo
 @click.option(
     "--problems", "-p", type=str, help="Path to (multiple) problem's instance PPDDL files.", multiple=True,
     default=[
+        'problems/blocksworld/pb3_p0.pddl',
+        'problems/blocksworld/pb3_p1.pddl',
+        'problems/blocksworld/pb3_p2.pddl',
+        'problems/blocksworld/pb4_p0.pddl',
         'problems/blocksworld/pb5_p0.pddl',
         'problems/blocksworld/pb5_p1.pddl',
-        'problems/blocksworld/pb5_p2.pddl',
-        'problems/blocksworld/pb5_p3.pddl',
-        'problems/blocksworld/pb5_p4.pddl',
-        'problems/blocksworld/pb5_p5.pddl',
-        'problems/blocksworld/pb5_p6.pddl',
+        'problems/blocksworld/pb5_p2.pddl'
     ])
 @click.option("--valid", "-v", type=str, help="Path to problem's instance PPDDL files used for training's validation.", default='')
 @click.option("--layers", "-l", type=int, help="Number of layers of the trained ASNets", default=2)
