@@ -83,7 +83,7 @@ class ASNetNoLMCut:
         # The keys are sorted so their relative order is the same in all ASNets instanced from the same problem domain.
         # The keys are tuples of strings representing the action/proposition and their related predicates, respectively
         # Example Action keys: ('PickUp', ('a',)) | ('Stack', ('b', 'c'))
-        # Example Propoposition Keys: ('clear', 'a') | ('on', 'c', 'b')
+        # Example Proposition Keys: ('clear', 'a') | ('on', 'c', 'b')
         act_relations, pred_relations = self.get_relations(self._get_ground_actions())
         self.ground_actions: List[Tuple[str]] = [act for act in act_relations.keys()]
         self.ground_actions.sort()
@@ -186,62 +186,6 @@ class ASNetNoLMCut:
         return Input(shape=(input_len,), name="Input"), action_sizes
     
 
-    def _get_related_predicates(self, actions_indexes: List[int]) -> List[List[int]]:
-        """Returns a list where each element is a list of action indexes that
-        refer to the same action and have at least one predicate in a common
-        position.
-        (i. e. 'drive(shakey, hall, kitchen)' and 'drive(shakey, hall, office)')
-        
-        Exceptionally, if an action has only one predicate, we always consider
-        instances of the same action to be related.
-        (i. e. 'loadtire(l-3-5)' and 'loadtire(l-4-4)' in the TireWorld problem)
-
-        Parameters
-        ----------
-        actions_indexes: List[int]
-            List of indexes of actions
-        
-        Returns
-        -------
-        List[List[int]]
-            List with list of related actions' indexes.
-        """
-        related_predicates: List[List[int]] = []
-
-        for act_index in actions_indexes:
-            action: tuple = self.ground_actions[act_index]
-            act_name: str = action[0]
-            act_predicates: Tuple[str] = action[1]
-            related_indexes: List[int] = [act_index]
-            
-            for other_act_index in actions_indexes:
-                if other_act_index != act_index:
-                    other_action: str = self.ground_actions[other_act_index]
-                    other_predicates: Tuple[str] = other_action[1]
-
-                    # Checks for other related actions representing the same action type
-                    if act_name == other_action[0]:
-                        # Corner case. If the action only has one predicate, both actions with same name are related
-                        if len(act_predicates) == 1 and len(act_predicates) == len(other_predicates):
-                            related_indexes.append(other_act_index)
-                            continue
-
-                        # If both actions have a common predicate in the same position, they are related
-                        for i, pred in enumerate(act_predicates):
-                            if pred == other_predicates[i]:
-                                related_indexes.append(other_act_index)
-                                break
-            
-            related_indexes = list(set(related_indexes)) # Removes repetitions
-            related_indexes.sort() # Sorts list for future repetition removal in related_predicates
-            related_predicates.append(related_indexes)
-
-        # Removes repetitions
-        related_predicates.sort()
-        related_predicates = list(val for val,_ in itertools.groupby(related_predicates))
-        return related_predicates
-    
-
     def _equivalent_actions(self, actions_indexes: List[int]) -> List[List[int]]:
         """Returns a list where each element is a list of action indexes that
         refer to the same action.
@@ -277,7 +221,59 @@ class ASNetNoLMCut:
 
         related_actions_indexes.sort()
         return related_actions_indexes
+    
 
+    def _group_related_actions(self, actions_indexes: List[int], predicates: List[str]) -> List[List[int]]:
+        """Returns a list where each element is a list of action indexes that
+        refer to the same action and have one of the predicates in the same
+        position.
+        (i. e. 'drive(hall, kitchen)' and 'drive(hall, office)' are both the
+        'drive' action with the predicate 'hall' in the first position)
+
+        Parameters
+        ----------
+        actions_indexes: List[int]
+            List of indexes of actions
+        
+        Returns
+        -------
+        List[List[int]]
+            List with list of related actions' indexes.
+        """
+        related_actions_groups: List[List[int]] = []
+        
+        # For each predicate, groups related actions where the predicate is
+        # present in the same position.
+        for pred in predicates:
+            # Looks for actions with the predicate pred in the same position
+            for act_index in actions_indexes:
+                action: tuple = self.ground_actions[act_index]
+                act_name: str = action[0]
+                act_predicates: Tuple[str] = action[1]
+                related_indexes: List[int] = [act_index]
+
+                if pred in act_predicates:
+                    pred_pos = act_predicates.index(pred)
+                
+                    for other_act_index in actions_indexes:
+                        if other_act_index != act_index:
+                            other_action: str = self.ground_actions[other_act_index]
+                            other_name: str = other_action[0]
+                            other_predicates: Tuple[str] = other_action[1]
+
+                            # Checks for another action of same type and with the predicate pred in same position 
+                            if act_name == other_name and other_predicates[pred_pos] == pred:
+                                related_indexes.append(other_act_index)
+                    
+                    related_indexes = list(set(related_indexes)) # Removes repetitions
+                    related_indexes.sort() # Sorts list so repetitions can be removed
+                    related_actions_groups.append(related_indexes)
+
+        # Removes repetitions
+        related_actions_groups.sort()
+        related_actions_groups = list(val for val,_ in itertools.groupby(related_actions_groups))
+        return related_actions_groups
+    
 
     def _build_first_propositions_layer(self, input_layer: Input, input_action_sizes: List[int]) -> Concatenate:
         """Builds the proposition layer that connects to the Input Layer from an
@@ -315,16 +311,17 @@ class ASNetNoLMCut:
                 related_predicates: List[List[int]] = self._equivalent_actions(related_actions_indexes)
             else:
                 # IF the proposition HAS predicates, pools related actions considering the position of the predicates
-                related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
+                related_predicates: List[List[int]] = self._group_related_actions(related_actions_indexes, prop[1:])
             logging.debug("\tDone getting related")
             
             related_connections: List[List[int]] = get_grouped_elements(related_predicates)
             transformed_related_connections: List[List[int]] = [self.action_indexes_to_input(conn, self.ground_actions, input_action_sizes) for conn in related_connections]
-            # Gathers all propositions with no relation to others into a single Lambda layer
+            # Differently than in other Proposition Layers, we will concatanate the values of individual solo connections.
+            # This must be done so the input size of the PropositionModules is not affected by the input layer's action sizes of different actions.
             unrelated_connections: List[int] = get_solo_elements(related_predicates)
-            transformed_unrelated_connections: List[int] = self.action_indexes_to_input(unrelated_connections, self.ground_actions, input_action_sizes)
-
-            prop_module = PropositionModule(transformed_related_connections, transformed_unrelated_connections, name=f"{'_'.join(prop)}_{layer_num}")
+            transformed_unrelated_connections: List[List[int]] = [self.action_indexes_to_input([conn], self.ground_actions, input_action_sizes) for conn in unrelated_connections]
+                                                                  
+            prop_module = PropositionModule(transformed_related_connections + transformed_unrelated_connections, [], name=f"{'_'.join(prop)}_{layer_num}")
             prop_module.build_weights()
 
             # Weight sharing between prop neurons representing the same action with different predicates
@@ -376,7 +373,7 @@ class ASNetNoLMCut:
                 related_predicates: List[List[int]] = self._equivalent_actions(related_actions_indexes)
             else:
                 # IF the proposition HAS predicates, pools related actions considering the position of the predicates
-                related_predicates: List[List[int]] = self._get_related_predicates(related_actions_indexes)
+                related_predicates: List[List[int]] = self._group_related_actions(related_actions_indexes, prop[1:])
             logging.debug("\tDone getting related")
 
             related_connections: List[List[int]] = get_grouped_elements(related_predicates)
