@@ -315,13 +315,28 @@ class ASNetNoLMCut:
             logging.debug("\tDone getting related")
             
             related_connections: List[List[int]] = get_grouped_elements(related_predicates)
-            transformed_related_connections: List[List[int]] = [self.action_indexes_to_input(conn, self.ground_actions, input_action_sizes) for conn in related_connections]
-            # Differently than in other Proposition Layers, we will concatanate the values of individual solo connections.
-            # This must be done so the input size of the PropositionModules is not affected by the input layer's action sizes of different actions.
+            # Differently than in other Proposition Layers, we can't simply concatenate related connections, because since they are composed of multiple individual input
+            # values, that would hide their individual value from the network and also "compress" the input shape, making it so it is impossible to share weights with
+            # networks with larger inputs.
+            # Consequently, we must group the individual values of each input action.
+            transformed_related_connections: List[List[int]] = []#[self.action_indexes_to_input(conn, self.ground_actions, input_action_sizes) for conn in related_connections]
+            for group in related_connections:
+                first_action_name: str = self.ground_actions[group[0]]
+                action_size: int = input_action_sizes[first_action_name]
+                transformed_group: List[List[int]] = [[] for _ in range(action_size)]
+                input_indexes: List[int] = self.action_indexes_to_input(group, self.ground_actions, input_action_sizes)
+
+                for action_starting_index in range(0, len(input_indexes), action_size):                        
+                    for i in range(action_size):
+                        input_value_index: int = input_indexes[action_starting_index + i]
+                        transformed_group[i].append(input_value_index)
+                
+                transformed_related_connections += transformed_group
+            
             unrelated_connections: List[int] = get_solo_elements(related_predicates)
-            transformed_unrelated_connections: List[List[int]] = [self.action_indexes_to_input([conn], self.ground_actions, input_action_sizes) for conn in unrelated_connections]
+            transformed_unrelated_connections: List[int] = self.action_indexes_to_input(unrelated_connections, self.ground_actions, input_action_sizes)
                                                                   
-            prop_module = PropositionModule(transformed_related_connections + transformed_unrelated_connections, [], name=f"{'_'.join(prop)}_{layer_num}")
+            prop_module = PropositionModule(transformed_related_connections, transformed_unrelated_connections, name=f"{'_'.join(prop)}_{layer_num}")
             prop_module.build_weights()
 
             # Weight sharing between prop neurons representing the same action with different predicates
