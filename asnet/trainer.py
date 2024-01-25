@@ -139,7 +139,7 @@ class Trainer:
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
         try:
-            for iter in tqdm(range(self.get_starting_iteration(save_path), exploration_loops)):
+            for iter in tqdm(range(self.info['starting_iteration'], exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     # Updates model with latest trained weights
                     weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
@@ -177,6 +177,10 @@ class Trainer:
 
         model = self.helpers[0].get_model()
 
+        self.info['starting_iteration'] = self.get_starting_iteration(save_path)
+        if self.info['starting_iteration'] > 0:
+            self.helpers[0].set_model_weights_from_file(f"{save_path}/iter{self.info['starting_iteration'] - 1}.json")
+
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
         training_inputs = []
@@ -184,7 +188,7 @@ class Trainer:
             converted_states, converted_actions = helper.generate_training_inputs(policy_exploration=self.info['policy_exploration'])
             training_inputs.append((converted_states, converted_actions))
         try:
-            for iter in tqdm(range(self.get_starting_iteration(save_path), exploration_loops)):
+            for iter in tqdm(range(self.info['starting_iteration'], exploration_loops)):
                 for i, helper in enumerate(self.helpers):
                     # Updates model with latest trained weights
                     weights = self.helpers[(i - 1) % len(self.helpers)].get_model_weights() # Get weights of previous helper
@@ -294,11 +298,7 @@ def train(domain, problems, valid: str='', layers: int=2, policy_exploration: bo
     "--problems", "-p", type=str, help="Path to (multiple) problem's instance PPDDL files.", multiple=True,
     default=[
         'problems/blocksworld/pb3_p0.pddl',
-        'problems/blocksworld/pb3_p1.pddl',
-        'problems/blocksworld/pb3_p2.pddl',
         'problems/blocksworld/pb4_p0.pddl',
-        'problems/blocksworld/pb5_p0.pddl',
-        'problems/blocksworld/pb5_p1.pddl',
         'problems/blocksworld/pb5_p2.pddl'
     ])
 @click.option("--valid", "-v", type=str, help="Path to problem's instance PPDDL files used for training's validation.", default='')
