@@ -48,6 +48,7 @@ def get_successor_states(state, actions):
 
 class LRTDP:
     GOAL_REWARD: float = 10
+    max_trial_length = float('inf')
 
     def __init__(self,
                  parser: Parser,
@@ -77,7 +78,6 @@ class LRTDP:
         self.states: list = list(self._get_all_states(self.actions))
 
         self.randomize_action_order = True
-        self.max_trial_length = float('inf')
     
 
     def _get_all_actions(self):
@@ -156,6 +156,9 @@ class LRTDP:
         for i in range(self.iterations):
             if DEBUG:
                 print("Iteration: ", i)
+                for state, val in self.state_values.items():
+                    if not self.solved_states[state]:
+                        print(f"{state}: {val}")
             if all(self.solved_states[s] for s in self.states):
                 return
             random_state = self.states[random.randint(0, len(self.states) - 1)]

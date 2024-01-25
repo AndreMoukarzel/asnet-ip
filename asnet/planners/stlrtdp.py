@@ -1,6 +1,8 @@
 from .lrtdp import LRTDP, get_successor_states, is_goal
 
+
 class STLRTDP(LRTDP):
+    max_trial_length = 200
     
     def _bellman_update(self, s):
         '''
@@ -28,14 +30,43 @@ class STLRTDP(LRTDP):
                 reward = 1.0
             min_q = min(min_q, probs[i] * (reward + self.discount_rate * self.state_values[ns]))
         return min_q
+    
+
+    def _check_solved(self, s):
+        # The difference from LRTDP is using max(self.min_Q(s, a)) instead of Q(pi)
+        flag = True
+        open = []
+        closed = []
+        if not self.solved_states[s]:
+            open.append(s)
+        while open:
+            s = open.pop()
+            closed.append(s)
+            app_acts = self._get_applicable_actions(s)
+            residual = self.state_values[s] - max(self.min_Q(s, a) for a in app_acts)
+            if abs(residual) > self.bellman_error_margin:
+                flag = False
+            else:
+                successor_states, _ = self._get_successor_states(s)
+                for ns in successor_states:
+                    if not self.solved_states[ns] and ns not in open and ns not in closed:
+                        open.append(ns)
+        if flag:
+            for ns in closed:
+                self.solved_states[ns] = True
+        else:
+            while closed:
+                s = closed.pop()
+                self._bellman_update(s)
+        return flag
 
 
 if __name__ == "__main__":
     from ippddl_parser.parser import Parser
     from ..heuristics.lm_cut import LMCutHeuristic
 
-    domain_file = 'problems/blocksworld/domain.pddl'
-    problem_file = 'problems/blocksworld/5blocks.pddl'
+    domain_file = 'problems/ip_blocksworld/domain.pddl'
+    problem_file = 'problems/ip_blocksworld/pb3_p0.pddl'
 
     parser: Parser = Parser()
     parser.scan_tokens(domain_file)
