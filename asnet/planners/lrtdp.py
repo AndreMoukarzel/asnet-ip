@@ -17,8 +17,6 @@ DEBUG: bool = False
 
 
 class LRTDP(RTDP):
-    MAX_TRIAL_LENGTH = 5000
-
     def __init__(self,
                  parser: Parser,
                  heuristic=NullHeuristic(),
@@ -52,14 +50,14 @@ class LRTDP(RTDP):
     
 
     def execute(self):
-        self._initialize_values()        
+        self._initialize_values()
         
         for i in range(self.iterations):
             if DEBUG:
                 print("Iteration: ", i)
-                #for state, val in self.state_values.items():
-                #    if not self.solved_states[state]:
-                #        print(f"{state}: {val}")
+                for state, val in self.state_values.items():
+                    if not self.solved_states[state]:
+                        print(f"{state}: {val}")
             if all(self.solved_states[s] for s in self.states):
                 return
             random_state = self.states[random.randint(0, len(self.states) - 1)]
