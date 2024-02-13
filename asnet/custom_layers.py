@@ -3,7 +3,11 @@ from typing import List
 
 import tensorflow as tf
 from keras.layers import Layer, Lambda, Dense
+from keras.regularizers import L2
 from keras import backend as K
+
+
+DEFAULT_HIDDEN_SIZE: int = 16
 
 
 def build_connections_layer(relevant_indexes: List[int]) -> Lambda:
@@ -29,16 +33,17 @@ class Output(Layer):
     chosen given the received proposition values received by the previous
     Proposition layer, composed of the concatenation of PropositionModules.
     """
-    def __init__(self, input_action_sizes: List[int], **kwargs):
+    def __init__(self, input_action_sizes: List[int], hidden_size: int=DEFAULT_HIDDEN_SIZE, **kwargs):
         super(Output, self).__init__(**kwargs)
         # Creates a 'mask' with values 1.0 for applicable actions and 0.0 for non-applicable actions
         action_sizes: List[int] = list(input_action_sizes.values())
+        self.hidden_size: int = hidden_size
         sizes_sum: int = 0
         applicable_indexes: List[int] = [] # Indexes from the input layer that specify if an action is applicable or not
         for act_size in action_sizes:
              sizes_sum += act_size
              applicable_indexes.append(sizes_sum - 1)
-        self.lambda_mask = build_connections_layer(applicable_indexes)
+        self.lambda_mask: Lambda = build_connections_layer(applicable_indexes)
 
     def call(self, inputs):
         if not isinstance(inputs, list) or len(inputs) != 2:
@@ -47,7 +52,8 @@ class Output(Layer):
         prev_layer = inputs[0]
         input_layer = inputs[1] # Must be the input layer from the whole ASNet!
 
-        output = tf.multiply(prev_layer, self.lambda_mask(input_layer))
+        app_act_mask = self.lambda_mask(input_layer)
+        output = tf.multiply(prev_layer, tf.repeat(app_act_mask, repeats=self.hidden_size)) # Repeats mask to all output values of each Action Module
         return tf.nn.softmax(output)
 
 
@@ -65,11 +71,11 @@ class ActionModule(Layer):
     set_trainable_weights(kernel, bias)
         Overwrides the kernel and bias of the ActionModule
     """
-    def __init__(self, related_prep_indexes: List[int], **kwargs):
+    def __init__(self, related_prep_indexes: List[int], hidden_size: int=DEFAULT_HIDDEN_SIZE, **kwargs):
         super(ActionModule, self).__init__(**kwargs)
         self.filter_shape = (None, len(related_prep_indexes))
         self.filter = build_connections_layer(related_prep_indexes)
-        self.neuron = Dense(1)
+        self.neuron = Dense(hidden_size, kernel_regularizer=L2(1e-4))
 
     def call(self, input):
         x = self.filter(input)
@@ -111,7 +117,7 @@ class PropositionModule(Layer):
     set_trainable_weights(kernel, bias)
         Overwrides the kernel and bias of the PropositionModule
     """
-    def __init__(self, related_connections: List[List[int]], unrelated_connections: List[int], **kwargs):
+    def __init__(self, related_connections: List[List[int]], unrelated_connections: List[int], hidden_size: int=DEFAULT_HIDDEN_SIZE, **kwargs):
         super(PropositionModule, self).__init__(**kwargs)
         self.pooling_filters: List[Lambda] = []
         for connections in related_connections:
@@ -121,7 +127,7 @@ class PropositionModule(Layer):
         if unrelated_connections:
             self.solo_filter = build_connections_layer(unrelated_connections) # We also filter out all relevant predicates with no relations to others
         self.concat_shape = (None, len(related_connections) + len(unrelated_connections))
-        self.neuron = Dense(1)
+        self.neuron = Dense(hidden_size, kernel_regularizer=L2(1e-4))
 
     def call(self, input):
         pooled_inputs: list = []
