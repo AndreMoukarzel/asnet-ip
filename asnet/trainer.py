@@ -187,6 +187,7 @@ class Trainer:
         for helper in self.helpers:
             converted_states, converted_actions = helper.generate_training_inputs(policy_exploration=self.info['policy_exploration'])
             training_inputs.append((converted_states, converted_actions))
+            helper.solver = None
         try:
             for iter in tqdm(range(self.info['starting_iteration'], exploration_loops)):
                 for i, helper in enumerate(self.helpers):
