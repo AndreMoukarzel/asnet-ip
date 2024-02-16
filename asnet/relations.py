@@ -32,8 +32,8 @@ def get_related_propositions(action, include_equality: bool=False) -> Set[Tuple[
 
     Returns
     -------
-    Set[Tuple[str]]
-        Set with all propositions related to the action represented as tuples
+    List[Tuple[str]]
+        All propositions related to the action represented as tuples
         of format (proposition_name, object1, object2, ...).
 
         E.g. ('on', 'a', 'b')
@@ -60,4 +60,4 @@ def get_related_propositions(action, include_equality: bool=False) -> Set[Tuple[
         if not 'equal' in pred[0]:
             cleaned_predicates.append(pred)
 
-    return set(cleaned_predicates)
+    return set(cleaned_predicates) # Removes repetitions

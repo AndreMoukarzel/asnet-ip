@@ -1,9 +1,5 @@
-"""Contains the ASNet class, used for instancing an Action Schema Network.
-
-The only trainable layers of the network are its action and proposition layers.
-All other layers, such as the Lambda and Concatenate layers, are used simply to
-make sure the action and proposition layers have the appropriate format to have
-shareable weights.
+"""Contains the Alternative ASNet base class (equivalent to ASNet), used for
+instancing an Alternative architecture of Action Schema Network.
 """
 import time
 import logging
@@ -16,15 +12,14 @@ from keras.layers import Input, Dense, Concatenate
 from keras.models import Model
 import click
 
-from .custom_layers import Output, ActionModule, PropositionModule, AltPropositionModule
+from .asnet import ASNet
+from .asnet_no_lmcut import get_solo_elements, get_grouped_elements, share_layer_weights
+from .custom_layers import Output, ActionModule, AltPropositionModule
 from .relations import get_related_propositions
-from .sysadmin.auxiliary import get_connections
 
 
-RELATION_LIMIT: int = 100 # Limit to "K-positions" that predicates can be found in Actions
 
-
-class ASNetNoLMCut:
+class ASNetAlt(ASNet):
     """
     Action Schema Network architecture.
 
@@ -56,7 +51,6 @@ class ASNetNoLMCut:
     action_indexes_to_input(related_actions_indexes, actions, input_action_sizes)
         Converts action indexes to equivalent indexes from the input layer.
     """
-
     def __init__(self, domain_file: str, problem_file: str, layer_num: int=2, instance_network: bool = True) -> None:
         """
         Parameters
@@ -96,101 +90,11 @@ class ASNetNoLMCut:
         # List propositions related to each action by their index in self.propositions
         self.related_prop_indexes: Dict[Tuple[str], List[int]] = self._values_to_index(act_relations, self.propositions)
 
-        # The K-positions are calculated based on the lifted propositions
-        self.act_k_relations: Dict[str, List[Tuple[str]]] = {}
-        for act in self.parser.actions:
-            self.act_k_relations[act.name] = list(get_related_propositions(act))
-
         if instance_network:
             self.model = self._instance_network(layer_num)
 
 
     ################################################ PRIVATE METHODS ################################################
-
-
-    def _get_ground_actions(self) -> list:
-        """Returns a list of the grounded actions of the problem instance.
-
-        Returned actions are instances of ippddl_parser's Action objects.
-        """
-        connections = None
-        if 'sysadmin' in self.parser.domain_name:
-            connections = get_connections(self.parser)
-
-        ground_actions = []
-        for action in self.parser.actions:
-            for act in action.groundify(self.parser.objects, self.parser.types, connections):
-                # Does not add actions invalidated by equality preconditions
-                invalid_equalty: bool = False
-                for precond in act.negative_preconditions:
-                    if precond[0] == 'equal' and precond[1] == precond[2]:
-                        invalid_equalty = True
-                
-                if not invalid_equalty:
-                    ground_actions.append(act)
-        return ground_actions
-
-
-    def _values_to_index(self, unindexed_values: Dict[any, List[str]], values_to_index: List[any]) -> Dict[any, List[int]]:
-        """Converts the values from the 'uninedexed_values' dictionary into the
-        index those values have in the 'values_to_index' list
-
-        Parameters
-        ----------
-        unindexed_values: Dict[Tuple[str], List[str]]
-            Dictionary with values to be converted to indexes
-        values_to_index: List[str]
-            List of values found in the dictionary above. The INDEXES of values
-            in this list will be used as values in the returned dictionary
-        
-        Returns
-        -------
-        Dict[any, List[int]]
-            Dictionary with keys from 'unindexed_values' and a list of indexes
-            extracted from 'values_to_index' as values.
-        """
-        indexed_dict: dict = {}
-        for key, values in unindexed_values.items():
-            indexed_values = [values_to_index.index(val) for val in values]
-            indexed_values.sort()
-            indexed_dict[key] = indexed_values
-        return indexed_dict
-
-
-    def _build_input_layer(self, actions: List[Tuple[str]], related_pred_indexes: Dict[Tuple[str], List[int]]) -> Input:
-        """Builds the specially formated input action layer.
-
-        The input layer is composed - for each action - of proposition truth
-        values, binary values indicating if such propositions are in a goal
-        state and binary values indicating if the action is applicable.
-
-        Parameters
-        ----------
-        actions: List[Tuple[str]]
-            List of tuples or format (action name, action predicates)
-        related_pred_indexes: Dict[Tuple[str], List[int]]
-            Dictionary where the keys are action tuples such as above, and
-            the values are the list of indexes of related predicates to each
-            actions.
-        
-        Returns
-        -------
-        Input
-            Input layer of the ASNet
-        """
-        input_len: int = 0
-        action_sizes: Dict[str, int] = {}
-        for act in actions:
-            # Considers a value for each related proposition
-            related_prop_num: int = len(related_pred_indexes[act])
-            # For each related proposition, indicates if it is in a goal state
-            goal_info: int = related_prop_num
-            # Adds one more element indicating if the action is applicable
-            input_action_size: int = related_prop_num + goal_info + 1
-
-            action_sizes[act] = input_action_size
-            input_len += input_action_size
-        return Input(shape=(input_len,), name="Input"), action_sizes
     
 
     def _equivalent_actions(self, actions_indexes: List[int]) -> List[List[int]]:
@@ -280,55 +184,9 @@ class ASNetNoLMCut:
         related_actions_groups.sort()
         related_actions_groups = list(val for val,_ in itertools.groupby(related_actions_groups))
         return related_actions_groups
-
-
-    def _group_by_k_relation(self, actions_indexes: List[int], predicate: str) -> List[List[int]]:
-        """Returns a list where each element is a list of action indexes that
-        are related to the predicate by the same K position.
-        (i. e. 'drive(hall, kitchen)' and 'drive(hall, office)' are both the
-        'drive' action with the predicate 'hall' in the first position)
-
-        Parameters
-        ----------
-        actions_indexes: List[int]
-            List of indexes of actions
-        
-        Returns
-        -------
-        List[List[int]]
-            List with list of related actions' indexes.
-        """
-        pred_name: str = predicate[0]
-        related_actions_groups: List[List[int]] = [ [] for _ in range(RELATION_LIMIT) ]
-
-        # Looks for actions with the predicate pred in the same position
-        for act_index in actions_indexes:
-            action: tuple = self.ground_actions[act_index]
-            act_name: str = action[0]
-            related_preds: List[Tuple[str]] = self.act_k_relations[act_name]
-            # Finds "K" positions through which the actions are related to the current predicate
-            related_positions: List[int] = [i for i, pred in enumerate(related_preds) if pred[0] == pred_name]
-            for pos in related_positions:
-                related_actions_groups[pos].append(act_index)
-        
-        # Removes the empty lists
-        related_actions_groups = [group for group in related_actions_groups if group != []]
-
-        return related_actions_groups
     
 
-    def _indexes_by_hidden_dimension(self, indexes: List[int], hidden_dimension: int) -> List[int]:
-        adjusted_indexes: List[int] = []
-
-        for index in indexes:
-            adjusted_index: int = index * hidden_dimension
-            for i in range(adjusted_index, adjusted_index + hidden_dimension):
-                adjusted_indexes.append(i)
-        
-        return adjusted_indexes
-    
-
-    def _build_first_propositions_layer(self, input_layer: Input, input_action_sizes: List[int], hidden_dimension: int) -> Concatenate:
+    def _build_first_propositions_layer(self, input_layer: Input, input_action_sizes: List[int]) -> Concatenate:
         """Builds the proposition layer that connects to the Input Layer from an
         ASNet.
         
@@ -389,12 +247,7 @@ class ASNetNoLMCut:
             unrelated_connections: List[int] = get_solo_elements(related_predicates)
             transformed_unrelated_connections: List[int] = self.action_indexes_to_input(unrelated_connections, self.ground_actions, input_action_sizes)
                                                                   
-            prop_module = AltPropositionModule(
-                transformed_related_connections,
-                transformed_unrelated_connections,
-                hidden_dimension=hidden_dimension,
-                name=f"{'_'.join(prop)}_{layer_num}"
-            )
+            prop_module = AltPropositionModule(transformed_related_connections, transformed_unrelated_connections, hidden_dimension=1, name=f"{'_'.join(prop)}_{layer_num}")
             prop_module.build_weights()
 
             # Weight sharing between prop neurons representing the same action with different predicates
@@ -411,7 +264,7 @@ class ASNetNoLMCut:
         return prop_layer
 
 
-    def _build_propositions_layer(self, prev_layer: Concatenate, layer_num: int, hidden_dimension: int) -> Concatenate:
+    def _build_propositions_layer(self, prev_layer: Concatenate, layer_num: int) -> Concatenate:
         """Builds a proposition layer by concatenation of multiple
         PropositionModule instances.
 
@@ -441,13 +294,18 @@ class ASNetNoLMCut:
             lifted_prop_name: str = prop[0]
             related_actions_indexes: List[int] = self.related_act_indexes[prop]
             logging.debug("\tGetting related predicates")
-            related_predicates: List[List[int]] = self._group_by_k_relation(related_actions_indexes, prop)
+            if len(prop) == 1:
+                # If proposition has no predicates, pools related actions together by action name
+                related_predicates: List[List[int]] = self._equivalent_actions(related_actions_indexes)
+            else:
+                # IF the proposition HAS predicates, pools related actions considering the position of the predicates
+                related_predicates: List[List[int]] = self._group_related_actions(related_actions_indexes, prop[1:])
             logging.debug("\tDone getting related")
 
-            # Adjusts indexes considering the hidden dimension of the previous layer
-            adjusted_related: List[List[int]] = [self._indexes_by_hidden_dimension(group, hidden_dimension) for group in related_predicates]
+            related_connections: List[List[int]] = get_grouped_elements(related_predicates)
+            unrelated_connections: List[int] = get_solo_elements(related_predicates)
 
-            prop_module = PropositionModule(adjusted_related, hidden_dimension, name=f"{'_'.join(prop)}_{layer_num}")
+            prop_module = AltPropositionModule(related_connections, unrelated_connections, hidden_dimension=1, name=f"{'_'.join(prop)}_{layer_num}")
             prop_module.build_weights()
 
             # Weight sharing between prop neurons representing the same predicate
@@ -459,12 +317,13 @@ class ASNetNoLMCut:
                 share_layer_weights(lifted_prop_modules[lifted_prop_name], prop_module)
             
             propositions_layer.append(prop_module(prev_layer))
+                
         # Concatenate all proposition neurons into a single layer
         prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
         return prop_layer
 
 
-    def _build_actions_layer(self, prev_layer, layer_num: int, input_hidden_dimension: int, output_hidden_dimension: int) -> Concatenate:
+    def _build_actions_layer(self, prev_layer, layer_num: int) -> Concatenate:
         """Builds an action layer by concatenation of multiple ActionModule
         instances.
 
@@ -493,10 +352,8 @@ class ASNetNoLMCut:
             act_name: str = act[0] + '_' + '_'.join(act[1])
             lifted_act_name: str = act[0]
             related_prop_indexes: List[int] = self.related_prop_indexes[act]
-            # Adjusts indexes considering the hidden dimension of the previous layer
-            adjusted_indexes = self._indexes_by_hidden_dimension(related_prop_indexes, input_hidden_dimension)
             logging.debug(f"Building {act_name} 's ActionModule")
-            act_neuron = ActionModule(adjusted_indexes, output_hidden_dimension, name=f"{act_name}_{layer_num}")
+            act_neuron = ActionModule(related_prop_indexes, hidden_dimension=1, name=f"{act_name}_{layer_num}")
             act_neuron.build_weights()
 
             # Weight sharing between actions neurons representing the same action with different predicates
@@ -512,7 +369,7 @@ class ASNetNoLMCut:
         return act_layer
 
 
-    def _instance_network(self, layer_num: int=2, hidden_dimension: int=2) -> Model:
+    def _instance_network(self, layer_num: int=2) -> Model:
         """Instances and return an Action Schema Network based on current domain
         and problem.
         
@@ -537,18 +394,12 @@ class ASNetNoLMCut:
         if layer_num < 1:
             raise ValueError('The network must have at least one layer. The value of layer_num must be equal or larger than 1.')
         input_layer, input_action_sizes = self._build_input_layer(self.ground_actions, self.related_prop_indexes)
-        last_prop_layer = self._build_first_propositions_layer(input_layer, input_action_sizes, hidden_dimension)
-        if layer_num == 1:
-            last_act_layer = self._build_actions_layer(last_prop_layer, 1, input_hidden_dimension=hidden_dimension, output_hidden_dimension=1)
-        else:
-            last_act_layer = self._build_actions_layer(last_prop_layer, 1, input_hidden_dimension=hidden_dimension , output_hidden_dimension=hidden_dimension)
+        last_prop_layer = self._build_first_propositions_layer(input_layer, input_action_sizes)
+        last_act_layer = self._build_actions_layer(last_prop_layer, 1)
 
         for i in range(2, layer_num + 1):
-            last_prop_layer = self._build_propositions_layer(last_act_layer, i, hidden_dimension)
-            if i == layer_num:
-                last_act_layer = self._build_actions_layer(last_prop_layer, i, input_hidden_dimension=hidden_dimension, output_hidden_dimension=1)
-            else:
-                last_act_layer = self._build_actions_layer(last_prop_layer, i, input_hidden_dimension=hidden_dimension , output_hidden_dimension=hidden_dimension)
+           last_prop_layer = self._build_propositions_layer(last_act_layer, i)
+           last_act_layer = self._build_actions_layer(last_prop_layer, i)
 
         logging.debug("Building output layer")
         output_layer = Output(
@@ -557,54 +408,6 @@ class ASNetNoLMCut:
         logging.debug("Done building ASNet")
 
         return Model(input_layer, output_layer)
-    
-
-    ################################################ PUBLIC METHODS ################################################
-    
-
-    def compile(self) -> None:
-        """Compiles the ASNet to be trained"""
-        self.model.compile(
-            loss=keras.losses.categorical_crossentropy, # Loss function is logloss
-            optimizer=keras.optimizers.SGD(learning_rate=0.0005),
-            metrics=[
-                'accuracy',
-                keras.metrics.Precision(),
-                keras.metrics.Recall(),
-                'MeanSquaredError',
-                'AUC'
-            ]
-        )
-    
-
-    def get_ground_actions(self) -> List[Tuple[str]]:
-        """Returns a list with the problem instance's grounded actions"""
-        return self.ground_actions
-    
-
-    def get_related_act_indexes(self) -> Dict[Tuple[str], List[int]]:
-        """Returns a dictionary with, for each of the problem's propositions,
-        the index in 'ground_actions' of actions related to it.
-
-        The action's indexes, consequently, are equivalent to the ActionModule's
-        positions in an Action Layer of the network.
-        """
-        return self.related_act_indexes
-    
-
-    def get_related_prop_indexes(self) -> Dict[Tuple[str], List[int]]:
-        """Returns a dictionary with, for each of the problem's actions,
-        the index in 'propositions' of propositions related to it.
-
-        The propositions' indexes, consequently, are equivalent to the
-        PropositionModule's  positions in a Proposition Layer of the network.
-        """
-        return self.related_prop_indexes
-    
-
-    def get_model(self) -> Model:
-        """Returns the instanced Neural Network"""
-        return self.model
 
 
     ################################################ STATIC METHODS ################################################
@@ -628,7 +431,6 @@ class ASNetNoLMCut:
             related propositions, as well as a dictionary were keys are the
             propositions and values are the related actions.
         """
-        # We save a set (with no repetitions) for future indexing of ground actions and ground propositions
         action_relations: Dict[Tuple[str], Set[Tuple[str]]] = {}
         for act in actions:
             action_relations[(act.name, act.parameters)] = get_related_propositions(act)
@@ -645,74 +447,6 @@ class ASNetNoLMCut:
                         predicate_relations[pred] = set(list(related_acts) + [action])
         
         return action_relations, predicate_relations
-    
-
-    @staticmethod
-    def action_indexes_to_input(action_indexes: List[int], actions: List[Tuple[str]], input_action_sizes: List[int]) -> List[int]:
-        """Returns a list of the Input Layer's indexes that is equivalent to
-        the actions from the received action_indexes in any other Action Layer
-        of the ASNet.
-
-        Parameters
-        ----------
-        action_indexes: List[int]
-            List of indexes of relevant actions.
-        actions: List[Tuple[str]]
-            List of action names.
-        input_action_sizes: List[int]
-            List with size of each action in the Input Layer of the ASNet.
-        """
-        transformed_indexes: List[int] = []
-
-        for act_index in action_indexes:
-            act_name: str = actions[act_index]
-            act_input_size: int = input_action_sizes[act_name]
-            # Finds the index of input action by summing the length of all
-            # previous input actions
-            real_act_index: int = sum([input_action_sizes[actions[act_i]] for act_i in range(act_index)])
-            for i in range(real_act_index, real_act_index + act_input_size):
-                transformed_indexes.append(i)
-        
-        return transformed_indexes
-
-
-#################################################### HELPER METHODS ####################################################
-
-
-def get_solo_elements(all_elements: List[list]) -> list:
-    """Given a list of lists, returns the concatenation of all
-    single-element lists."""
-    solo_elements: list = []
-    for elements in all_elements:
-        if len(elements) == 1:
-            solo_elements.append(elements[0])
-    return solo_elements
-
-
-def get_grouped_elements(all_elements: List[list]) -> List[List[int]]:
-    """Given a list of lists, returns all elements with length larger than 1"""
-    grouped_elements: List[List[int]] = []
-    for elements in all_elements:
-        if len(elements) > 1:
-            grouped_elements.append(elements)
-    return grouped_elements
-
-
-def share_layer_weights(layer1, layer2) -> None:
-    """Shares weights of layer1 with layer2 structurally.
-
-    In other words, layer2 will now train the same weights that layer1, even if
-    such layers are not directly connected.
-
-    Parameters
-    ----------
-    layer1: ActionModule or PropositionModule
-        Layer from which the original weights will be extracted
-    layer2: ActionModule or PropositionModule
-        Layer to receive new weights and biases from layer1.
-    """
-    kernel, bias = layer1.get_trainable_weights()
-    layer2.set_trainable_weights(kernel, bias)
 
 
 
