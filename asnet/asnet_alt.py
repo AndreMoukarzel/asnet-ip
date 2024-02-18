@@ -21,7 +21,7 @@ from .relations import get_related_propositions
 
 class ASNetAlt(ASNet):
     """
-    Action Schema Network architecture.
+    Alternative Action Schema Network architecture.
 
     The ASNet architecture is defined by the grounded actions and propositions
     from the specified problem instance, but its layers' weights can be
@@ -51,49 +51,6 @@ class ASNetAlt(ASNet):
     action_indexes_to_input(related_actions_indexes, actions, input_action_sizes)
         Converts action indexes to equivalent indexes from the input layer.
     """
-    def __init__(self, domain_file: str, problem_file: str, layer_num: int=2, instance_network: bool = True) -> None:
-        """
-        Parameters
-        ----------
-        domain_file : str
-            IPPDDL file specifying the problem domain
-        problem_file : str
-            IPPDDL file specifying the problem instance
-        layer_num: int, optional
-            Number of Action and Proposition Layers to be built in the Network.
-        instance_asnet: bool, optional
-            If the network will be instanced in initialization.
-        """
-        logging.info(f"Building ASNet based on:\n\tDomain: {domain_file}\n\tProblem: {problem_file}")
-        self.domain: str = domain_file
-        self.problem: str = problem_file
-        self.parser: Parser = Parser()
-
-        logging.debug("Building parser")
-        self.parser.scan_tokens(domain_file)
-        self.parser.scan_tokens(problem_file)
-        self.parser.parse_domain(domain_file)
-        self.parser.parse_problem(problem_file)
-
-        # Lists actions and propositions
-        # The keys are sorted so their relative order is the same in all ASNets instanced from the same problem domain.
-        # The keys are tuples of strings representing the action/proposition and their related predicates, respectively
-        # Example Action keys: ('PickUp', ('a',)) | ('Stack', ('b', 'c'))
-        # Example Proposition Keys: ('clear', 'a') | ('on', 'c', 'b')
-        act_relations, pred_relations = self.get_relations(self._get_ground_actions())
-        self.ground_actions: List[Tuple[str]] = [act for act in act_relations.keys()]
-        self.ground_actions.sort()
-        self.propositions: List[Tuple[str]] = [pred for pred in pred_relations.keys()]
-        self.propositions.sort()
-        # List actions related to each proposition by their index in self.ground_actions
-        self.related_act_indexes: Dict[Tuple[str], List[int]] = self._values_to_index(pred_relations, self.ground_actions)
-        # List propositions related to each action by their index in self.propositions
-        self.related_prop_indexes: Dict[Tuple[str], List[int]] = self._values_to_index(act_relations, self.propositions)
-
-        if instance_network:
-            self.model = self._instance_network(layer_num)
-
-
     ################################################ PRIVATE METHODS ################################################
     
 
@@ -186,7 +143,7 @@ class ASNetAlt(ASNet):
         return related_actions_groups
     
 
-    def _build_first_propositions_layer(self, input_layer: Input, input_action_sizes: List[int]) -> Concatenate:
+    def _build_first_propositions_layer(self, input_layer: Input, input_action_sizes: List[int], hidden_dimension: int) -> Concatenate:
         """Builds the proposition layer that connects to the Input Layer from an
         ASNet.
         
@@ -247,7 +204,12 @@ class ASNetAlt(ASNet):
             unrelated_connections: List[int] = get_solo_elements(related_predicates)
             transformed_unrelated_connections: List[int] = self.action_indexes_to_input(unrelated_connections, self.ground_actions, input_action_sizes)
                                                                   
-            prop_module = AltPropositionModule(transformed_related_connections, transformed_unrelated_connections, hidden_dimension=1, name=f"{'_'.join(prop)}_{layer_num}")
+            prop_module = AltPropositionModule(
+                transformed_related_connections,
+                transformed_unrelated_connections,
+                hidden_dimension=hidden_dimension,
+                name=f"{'_'.join(prop)}_{layer_num}"
+            )
             prop_module.build_weights()
 
             # Weight sharing between prop neurons representing the same action with different predicates
@@ -266,12 +228,17 @@ class ASNetAlt(ASNet):
 
     def _build_propositions_layer(self, prev_layer: Concatenate, layer_num: int) -> Concatenate:
         """Builds a proposition layer by concatenation of multiple
-        PropositionModule instances.
+        AltPropositionModule instances.
 
         All proposition layers representing the same proposition (e.g. Clear(a)
         and Clear(b)) share weights. Given that their weights have the same
         format, they can also be generalized to any equivalent proposition
         layers in other ASNets based on the same problem domain.
+
+        Differently than the standard PropositionModule, the input values of
+        AltPropositionModules also pool together inputs based on the position
+        of predicates' values, and not the K-position of the predicate in
+        relation to the Action.
 
         Parameters
         ----------
@@ -323,58 +290,16 @@ class ASNetAlt(ASNet):
         return prop_layer
 
 
-    def _build_actions_layer(self, prev_layer, layer_num: int) -> Concatenate:
-        """Builds an action layer by concatenation of multiple ActionModule
-        instances.
-
-        All action layers representing the same action (e.g. PickUp(a) and
-        PickUp(b)) share weights. Given that their weights have the same
-        format, they can also be generalized to any equivalent action layers in
-        other ASNets based on the same problem domain.
-
-        Parameters
-        ----------
-        prev_layer: Concatenate
-            Previous Proposition Layer.
-        layer_num: int
-            Number of the current layer.
+    def _instance_network(self, layer_num: int=2, hidden_dimension: int=1) -> Model:
+        """Instances and return an Alternative Action Schema Network based on
+        current domain and problem.
         
-        Returns
-        -------
-        Concatenate
-            Concatenation of multiple ActionModule instances forming a, Action
-            Layer.
-        """
-        actions_layer: List[Dense] = []
-        lifted_act_neurons: Dict[str, Dense] = {}
-        logging.debug(f"Action Layer {layer_num}")
-        for act in self.ground_actions:
-            act_name: str = act[0] + '_' + '_'.join(act[1])
-            lifted_act_name: str = act[0]
-            related_prop_indexes: List[int] = self.related_prop_indexes[act]
-            logging.debug(f"Building {act_name} 's ActionModule")
-            act_neuron = ActionModule(related_prop_indexes, hidden_dimension=1, name=f"{act_name}_{layer_num}")
-            act_neuron.build_weights()
-
-            # Weight sharing between actions neurons representing the same action with different predicates
-            if lifted_act_name not in lifted_act_neurons:
-                # First time action was seen
-                lifted_act_neurons[lifted_act_name] = act_neuron
-            else:
-                # Share weights with other actions of same type
-                share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)
-
-            actions_layer.append(act_neuron(prev_layer))
-        act_layer = Concatenate(name=f"Acts{layer_num}", trainable=False)(actions_layer)
-        return act_layer
-
-
-    def _instance_network(self, layer_num: int=2) -> Model:
-        """Instances and return an Action Schema Network based on current domain
-        and problem.
+        Differently than the "standard" ASNet, this one's first layer is
+        composed of an Proposition Layer. AltPropositionModules, that pool
+        all inputed values, are also used instead of the "traditional"
+        PropositionModules.
         
-        The network will have layer_num Proposition Layers and (layer_num + 1)
-        Action Layers.
+        The network will have layer_num Proposition Layers and Action Layers.
 
         Parameters
         ----------
@@ -394,12 +319,12 @@ class ASNetAlt(ASNet):
         if layer_num < 1:
             raise ValueError('The network must have at least one layer. The value of layer_num must be equal or larger than 1.')
         input_layer, input_action_sizes = self._build_input_layer(self.ground_actions, self.related_prop_indexes)
-        last_prop_layer = self._build_first_propositions_layer(input_layer, input_action_sizes)
-        last_act_layer = self._build_actions_layer(last_prop_layer, 1)
+        last_prop_layer = self._build_first_propositions_layer(input_layer, input_action_sizes, hidden_dimension)
+        last_act_layer = self._build_actions_layer(last_prop_layer, 1, hidden_dimension, is_last_layer = layer_num==1)
 
         for i in range(2, layer_num + 1):
-           last_prop_layer = self._build_propositions_layer(last_act_layer, i)
-           last_act_layer = self._build_actions_layer(last_prop_layer, i)
+            last_prop_layer = self._build_propositions_layer(last_act_layer, i, hidden_dimension)
+            last_act_layer = self._build_actions_layer(last_prop_layer, i, hidden_dimension, is_last_layer = layer_num==i)
 
         logging.debug("Building output layer")
         output_layer = Output(

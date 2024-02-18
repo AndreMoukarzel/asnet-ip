@@ -191,95 +191,6 @@ class ASNetNoLMCut:
             action_sizes[act] = input_action_size
             input_len += input_action_size
         return Input(shape=(input_len,), name="Input"), action_sizes
-    
-
-    def _equivalent_actions(self, actions_indexes: List[int]) -> List[List[int]]:
-        """Returns a list where each element is a list of action indexes that
-        refer to the same action.
-        (i. e. 'drive(shakey, hall, kitchen)' and 'drive(shakey, hall, office)')
-
-        Parameters
-        ----------
-        actions_indexes: List[int]
-            List of indexes of actions
-        
-        Returns
-        -------
-        List[List[int]]
-            List with list of related actions' indexes.
-        """
-        actions_indexes = actions_indexes.copy() # Copies list so there are no removals on the original argument
-        equivalent_actions: Dict[str, List[int]] = {}
-
-        while actions_indexes:
-            act_index = actions_indexes.pop()
-            action: tuple = self.ground_actions[act_index]
-            act_name: str = action[0]
-
-            if act_name in equivalent_actions:
-                equivalent_actions[act_name].append(act_index)
-            else:
-                equivalent_actions[act_name] = [act_index]
-
-        related_actions_indexes: List[List[int]] = []    
-        for act_name, related_indexes in equivalent_actions.items():
-            related_indexes.sort()
-            related_actions_indexes.append(related_indexes)
-
-        related_actions_indexes.sort()
-        return related_actions_indexes
-    
-
-    def _group_related_actions(self, actions_indexes: List[int], predicates: List[str]) -> List[List[int]]:
-        """Returns a list where each element is a list of action indexes that
-        refer to the same action and have one of the predicates in the same
-        position.
-        (i. e. 'drive(hall, kitchen)' and 'drive(hall, office)' are both the
-        'drive' action with the predicate 'hall' in the first position)
-
-        Parameters
-        ----------
-        actions_indexes: List[int]
-            List of indexes of actions
-        
-        Returns
-        -------
-        List[List[int]]
-            List with list of related actions' indexes.
-        """
-        related_actions_groups: List[List[int]] = []
-        
-        # For each predicate, groups related actions where the predicate is
-        # present in the same position.
-        for pred in predicates:
-            # Looks for actions with the predicate pred in the same position
-            for act_index in actions_indexes:
-                action: tuple = self.ground_actions[act_index]
-                act_name: str = action[0]
-                act_predicates: Tuple[str] = action[1]
-                related_indexes: List[int] = [act_index]
-
-                if pred in act_predicates:
-                    pred_pos = act_predicates.index(pred)
-                
-                    for other_act_index in actions_indexes:
-                        if other_act_index != act_index:
-                            other_action: str = self.ground_actions[other_act_index]
-                            other_name: str = other_action[0]
-                            other_predicates: Tuple[str] = other_action[1]
-
-                            # Checks for another action of same type and with the predicate pred in same position 
-                            if act_name == other_name and other_predicates[pred_pos] == pred:
-                                related_indexes.append(other_act_index)
-                    
-                    related_indexes = list(set(related_indexes)) # Removes repetitions
-                    related_indexes.sort() # Sorts list so repetitions can be removed
-                    related_actions_groups.append(related_indexes)
-
-        # Removes repetitions
-        related_actions_groups.sort()
-        related_actions_groups = list(val for val,_ in itertools.groupby(related_actions_groups))
-        return related_actions_groups
 
 
     def _group_by_k_relation(self, actions_indexes: List[int], predicate: str) -> List[List[int]]:
@@ -328,12 +239,12 @@ class ASNetNoLMCut:
         return adjusted_indexes
     
 
-    def _build_first_propositions_layer(self, input_layer: Input, input_action_sizes: List[int], hidden_dimension: int) -> Concatenate:
-        """Builds the proposition layer that connects to the Input Layer from an
+    def _build_first_action_layer(self, input_layer: Input, input_action_sizes: List[int], hidden_dimension: int) -> Concatenate:
+        """Builds the Action layer that connects to the Input Layer from an
         ASNet.
         
         Since the input has a special format, this is slightly different than
-        other proposition layers.
+        other Action layers.
 
         Parameters
         ----------
@@ -347,68 +258,37 @@ class ASNetNoLMCut:
         Returns
         -------
         Concatenate
-            Concatenation of multiple PropositionModule instances forming a
+            Concatenation of multiple ActionModule instances forming a
             Proposition Layer.
         """
-        layer_num: int = 1
-        propositions_layer: List[Dense] = []
-        lifted_prop_modules: Dict[str, Dense] = {}
-        logging.debug("First Prop Layer\n")
-        for prop in self.propositions:
-            logging.debug(f"Building {prop} 's PropositionModule")
-            lifted_prop_name: str = prop[0]
-            related_actions_indexes: List[int] = self.related_act_indexes[prop]
-            logging.debug("\tGetting related predicates")
-            if len(prop) == 1:
-                # If proposition has no predicates, pools related actions together by action name
-                related_predicates: List[List[int]] = self._equivalent_actions(related_actions_indexes)
+        layer_num: int = 0
+        curr_act_index: int = 0 # The index representing the starting position of the input representing the current action
+        actions_layer: List[Dense] = []
+        lifted_act_neurons: Dict[str, Dense] = {}
+
+        logging.debug(f"Action Layer {layer_num}")
+        for act in self.ground_actions:
+            act_name: str = act[0] + '_' + '_'.join(act[1])
+            lifted_act_name: str = act[0]
+            input_size: int = input_action_sizes[act]
+            input_indexes: List[int] = [i for i in range(curr_act_index, curr_act_index + input_size)]
+            logging.debug(f"Building {act_name} 's ActionModule")
+            act_neuron = ActionModule(input_indexes, hidden_dimension, name=f"{act_name}_{layer_num}")
+            act_neuron.build_weights()
+
+            # Weight sharing between actions neurons representing the same action with different predicates
+            if lifted_act_name not in lifted_act_neurons:
+                # First time action was seen
+                lifted_act_neurons[lifted_act_name] = act_neuron
             else:
-                # IF the proposition HAS predicates, pools related actions considering the position of the predicates
-                related_predicates: List[List[int]] = self._group_related_actions(related_actions_indexes, prop[1:])
-            logging.debug("\tDone getting related")
+                # Share weights with other actions of same type
+                share_layer_weights(lifted_act_neurons[lifted_act_name], act_neuron)
             
-            related_connections: List[List[int]] = get_grouped_elements(related_predicates)
-            # Differently than in other Proposition Layers, we can't simply concatenate related connections, because since they are composed of multiple individual input
-            # values, that would hide their individual value from the network and also "compress" the input shape, making it so it is impossible to share weights with
-            # networks with larger inputs.
-            # Consequently, we must group the individual values of each input action.
-            transformed_related_connections: List[List[int]] = []#[self.action_indexes_to_input(conn, self.ground_actions, input_action_sizes) for conn in related_connections]
-            for group in related_connections:
-                first_action_name: str = self.ground_actions[group[0]]
-                action_size: int = input_action_sizes[first_action_name]
-                transformed_group: List[List[int]] = [[] for _ in range(action_size)]
-                input_indexes: List[int] = self.action_indexes_to_input(group, self.ground_actions, input_action_sizes)
+            curr_act_index += input_size
 
-                for action_starting_index in range(0, len(input_indexes), action_size):                        
-                    for i in range(action_size):
-                        input_value_index: int = input_indexes[action_starting_index + i]
-                        transformed_group[i].append(input_value_index)
-                
-                transformed_related_connections += transformed_group
-            
-            unrelated_connections: List[int] = get_solo_elements(related_predicates)
-            transformed_unrelated_connections: List[int] = self.action_indexes_to_input(unrelated_connections, self.ground_actions, input_action_sizes)
-                                                                  
-            prop_module = AltPropositionModule(
-                transformed_related_connections,
-                transformed_unrelated_connections,
-                hidden_dimension=hidden_dimension,
-                name=f"{'_'.join(prop)}_{layer_num}"
-            )
-            prop_module.build_weights()
-
-            # Weight sharing between prop neurons representing the same action with different predicates
-            if lifted_prop_name not in lifted_prop_modules:
-                # First time prop was seen
-                lifted_prop_modules[lifted_prop_name] = prop_module
-            else:
-                # Share weights with other prop of same type
-                share_layer_weights(lifted_prop_modules[lifted_prop_name], prop_module)
-
-            propositions_layer.append(prop_module(input_layer))
-        # Concatenate all proposition neurons into a single layer
-        prop_layer = Concatenate(name=f"Prop{layer_num}", trainable=False)(propositions_layer)
-        return prop_layer
+            actions_layer.append(act_neuron(input_layer))
+        act_layer = Concatenate(name=f"Acts{layer_num}", trainable=False)(actions_layer)
+        return act_layer
 
 
     def _build_propositions_layer(self, prev_layer: Concatenate, layer_num: int, hidden_dimension: int) -> Concatenate:
@@ -464,7 +344,7 @@ class ASNetNoLMCut:
         return prop_layer
 
 
-    def _build_actions_layer(self, prev_layer, layer_num: int, input_hidden_dimension: int, output_hidden_dimension: int) -> Concatenate:
+    def _build_actions_layer(self, prev_layer, layer_num: int, hidden_dimension: int, is_last_layer: bool) -> Concatenate:
         """Builds an action layer by concatenation of multiple ActionModule
         instances.
 
@@ -486,6 +366,7 @@ class ASNetNoLMCut:
             Concatenation of multiple ActionModule instances forming a, Action
             Layer.
         """
+        output_dimension: int = 1 if is_last_layer else hidden_dimension
         actions_layer: List[Dense] = []
         lifted_act_neurons: Dict[str, Dense] = {}
         logging.debug(f"Action Layer {layer_num}")
@@ -494,9 +375,9 @@ class ASNetNoLMCut:
             lifted_act_name: str = act[0]
             related_prop_indexes: List[int] = self.related_prop_indexes[act]
             # Adjusts indexes considering the hidden dimension of the previous layer
-            adjusted_indexes = self._indexes_by_hidden_dimension(related_prop_indexes, input_hidden_dimension)
+            adjusted_indexes = self._indexes_by_hidden_dimension(related_prop_indexes, hidden_dimension)
             logging.debug(f"Building {act_name} 's ActionModule")
-            act_neuron = ActionModule(adjusted_indexes, output_hidden_dimension, name=f"{act_name}_{layer_num}")
+            act_neuron = ActionModule(adjusted_indexes, output_dimension, name=f"{act_name}_{layer_num}")
             act_neuron.build_weights()
 
             # Weight sharing between actions neurons representing the same action with different predicates
@@ -512,7 +393,7 @@ class ASNetNoLMCut:
         return act_layer
 
 
-    def _instance_network(self, layer_num: int=2, hidden_dimension: int=2) -> Model:
+    def _instance_network(self, layer_num: int=2, hidden_dimension: int=16) -> Model:
         """Instances and return an Action Schema Network based on current domain
         and problem.
         
@@ -537,18 +418,10 @@ class ASNetNoLMCut:
         if layer_num < 1:
             raise ValueError('The network must have at least one layer. The value of layer_num must be equal or larger than 1.')
         input_layer, input_action_sizes = self._build_input_layer(self.ground_actions, self.related_prop_indexes)
-        last_prop_layer = self._build_first_propositions_layer(input_layer, input_action_sizes, hidden_dimension)
-        if layer_num == 1:
-            last_act_layer = self._build_actions_layer(last_prop_layer, 1, input_hidden_dimension=hidden_dimension, output_hidden_dimension=1)
-        else:
-            last_act_layer = self._build_actions_layer(last_prop_layer, 1, input_hidden_dimension=hidden_dimension , output_hidden_dimension=hidden_dimension)
-
-        for i in range(2, layer_num + 1):
+        last_act_layer = self._build_first_action_layer(input_layer, input_action_sizes, hidden_dimension)
+        for i in range(layer_num):
             last_prop_layer = self._build_propositions_layer(last_act_layer, i, hidden_dimension)
-            if i == layer_num:
-                last_act_layer = self._build_actions_layer(last_prop_layer, i, input_hidden_dimension=hidden_dimension, output_hidden_dimension=1)
-            else:
-                last_act_layer = self._build_actions_layer(last_prop_layer, i, input_hidden_dimension=hidden_dimension , output_hidden_dimension=hidden_dimension)
+            last_act_layer = self._build_actions_layer(last_prop_layer, i + 1, hidden_dimension, is_last_layer = layer_num==i+1)
 
         logging.debug("Building output layer")
         output_layer = Output(
