@@ -9,8 +9,8 @@
     :parameters (?from - location ?to - location)
     :precondition (and (vehicle-at ?from) (road ?from ?to) (not-flattire) (not (equal ?from ?to)))
     :effect 
-		 (probabilistic 0.5 (and (vehicle-at ?to) (not (vehicle-at ?from)) (not (not-flattire)))
-                    1.0 (and (vehicle-at ?to) (not (vehicle-at ?from))))
+		 (imprecise (0.0 .5) (and (vehicle-at ?to) (not (vehicle-at ?from)) (not (not-flattire)))
+                (1.0 1.0) (and (vehicle-at ?to) (not (vehicle-at ?from))))
   )
   (:action loadtire
     :parameters (?loc - location)
