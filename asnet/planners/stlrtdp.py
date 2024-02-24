@@ -1,7 +1,9 @@
 from .lrtdp import LRTDP, is_goal
 
 
-class STLRTDP(LRTDP):    
+class STLRTDP(LRTDP):
+    MAX_TRIAL_LENGTH = 50000
+    
     def _bellman_update(self, s):
         '''
         Adapts the traditional Bellman Update method to follow the minmax
