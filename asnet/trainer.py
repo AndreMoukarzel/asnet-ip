@@ -154,6 +154,8 @@ class Trainer:
                     histories[i].append(history)
 
                 self.info["training_iterations"] = iter
+                if iter % 10 == 0:
+                    self.save_intermediary_weights(iter, save_path)
                 # Custom Early Stopping
                 self.update_helpers_weights()
                 if self._check_planning_success():
@@ -164,7 +166,6 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
-                    self.save_intermediary_weights(iter, save_path)
         except KeyboardInterrupt:
             self.info["early_stopped"] = True
         
@@ -204,6 +205,8 @@ class Trainer:
                     histories[i].append(history)
 
                 self.info["training_iterations"] = iter
+                if iter % 10 == 0:
+                    self.save_intermediary_weights(iter, save_path)
                 # Custom Early Stopping
                 self.update_helpers_weights()
                 if self._check_planning_success():
@@ -214,7 +217,6 @@ class Trainer:
                         break
                 else:
                     consecutive_solved = 0
-                    self.save_intermediary_weights(iter, save_path)
         except KeyboardInterrupt:
             self.info["early_stopped"] = True
         
