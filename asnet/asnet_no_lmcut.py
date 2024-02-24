@@ -67,7 +67,7 @@ class ASNetNoLMCut:
             IPPDDL file specifying the problem instance
         layer_num: int, optional
             Number of Action and Proposition Layers to be built in the Network.
-        instance_asnet: bool, optional
+        instance_network: bool, optional
             If the network will be instanced in initialization.
         """
         logging.info(f"Building ASNet based on:\n\tDomain: {domain_file}\n\tProblem: {problem_file}")
