@@ -99,7 +99,9 @@ class ASNetNoLMCut:
         # The K-positions are calculated based on the lifted propositions
         self.act_k_relations: Dict[str, List[Tuple[str]]] = {}
         for act in self.parser.actions:
-            self.act_k_relations[act.name] = list(get_related_propositions(act))
+            related = list(get_related_propositions(act))
+            related.sort()
+            self.act_k_relations[act.name] = related
 
         if instance_network:
             self.model = self._instance_network(layer_num)

@@ -7,7 +7,7 @@ from .asnet_no_lmcut import ASNetNoLMCut
 from .heuristics.lm_cut import LMCutHeuristic
 from .planners.lrtdp import LRTDP
 from .planners.stlrtdp import STLRTDP
-from .weight_transfer import get_lifted_weights, set_lifted_weights
+from .weight_transfer import get_lifted_weights, set_lifted_weights, read_lifted_weights_from_file, save_lifted_weights_to_file
 
 import numpy as np
 from ippddl_parser.parser import Parser
@@ -91,16 +91,23 @@ class TrainingHelper:
                 self.all_states = self.solver.get_all_states(self.parser.state, self.instance_Actions)
                 self.solver.solve(domain_file, problem_file)
             else:
+                print(f"Solving problem instance [{problem_file.split('/')[-1]}]")
+
                 self.solver = LRTDP(self.parser)
                 self.info['solver'] = 'LRTDP'
                 if ':imprecise' in self.parser.requirements:
                     self.solver = STLRTDP(self.parser)
                     self.info['solver'] = 'STLRTDP'
-                print(f"Solving problem instance [{problem_file.split('/')[-1]}]")
+                
                 self.solver.execute()
-                for _ in range(5):
+                for _ in range(15):
                     if self.solver.solution_is_valid():
                         break
+                    # Reset the solver
+                    self.solver = None
+                    self.solver = LRTDP(self.parser)
+                    if ':imprecise' in self.parser.requirements:
+                        self.solver = STLRTDP(self.parser)
                     self.solver.execute()
                 if not self.solver.solution_is_valid():
                     raise RuntimeError("Teacher planner could not find solution to problem in the allotted trials")
@@ -303,7 +310,11 @@ class TrainingHelper:
 
 
     def teacher_rollout(
-            self, initial_state: FrozenSet[Tuple[str]], all_states: List[FrozenSet[Tuple[str]]], state_best_actions: List[Tuple[str]]
+            self,
+            initial_state: FrozenSet[Tuple[str]],
+            all_states: List[FrozenSet[Tuple[str]]],
+            state_best_actions: List[Tuple[str]],
+            max_steps: int = 250
         ) -> List[FrozenSet[Tuple[str]]]:
         """Rollouts the teacher planner's policy from the given initial state
         until a goal or terminal state is reached.
@@ -324,6 +335,7 @@ class TrainingHelper:
         List[FrozenSet[Tuple[str]]]
             All states in teacher planner's plan
         """
+        step: int = 0
         states: List[FrozenSet[Tuple[str]]] = [initial_state]
         curr_state: FrozenSet[Tuple[str]] = initial_state
         app_actions: list = self.applicable_actions(curr_state)
@@ -340,8 +352,9 @@ class TrainingHelper:
                     curr_state = act.apply(curr_state)
                     states.append(curr_state)
                     app_actions = self.applicable_actions(curr_state)
-            if not action_applied:
+            if not action_applied or step > max_steps:
                 return states
+            step += 1
         
         return states
     
@@ -385,8 +398,10 @@ class TrainingHelper:
             for state in explored_states:
                 rollout_states += self.teacher_rollout(state, states, state_best_actions)
         else:
-            # Since no policy was run, rollouts the teacher policy from the initial state
-            rollout_states += self.teacher_rollout(self.init_state, states, state_best_actions)
+            # Since no policy was run, rollouts the teacher policy from the initial state a few times
+            for _ in range(40):
+                rollout_states += self.teacher_rollout(self.init_state, states, state_best_actions)
+            rollout_states = list(set(rollout_states)) # Removes repetitions
         training_states: List[str] = explored_states + rollout_states
 
         # Gets "correct" action according to Teacher Planner for each selected state
@@ -439,12 +454,10 @@ class TrainingHelper:
             It is expected that the weights variable will be originary from
             a compatible ASNet, based on a problem of the same domain.
         """
-        weights: dict = {}
-        with open(file_path, 'r') as f:
-            file_weights: dict = json.load(f)
-            for key, value in file_weights.items():
-                output_weights = np.array([np.array(val) for val in value[0]])
-                bias = np.array(value[1])
-                weights[key] = (output_weights, bias)
-
+        weights: dict = read_lifted_weights_from_file(file_path)
         set_lifted_weights(self.net, weights)
+    
+
+    def save_model_weights_to_file(self, file_path: str) -> None:
+        weights = self.get_model_weights()
+        save_lifted_weights_to_file(weights, file_path)

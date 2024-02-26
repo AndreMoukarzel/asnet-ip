@@ -1,8 +1,17 @@
 from typing import Dict, List, Tuple
+import json
 
 from .asnet import ASNet
 
 import numpy as np
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """Helper class used to save model weights to JSON files"""
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
 
 
 def get_weights_by_layer(asnet: ASNet) -> List[Tuple[str, np.array]]:
@@ -78,7 +87,7 @@ def get_lifted_name(grounded_name: str) -> str:
     return lifted_name
 
 
-def get_lifted_weights(asnet: ASNet, pooling: str='max') -> Dict[str, np.array]:
+def get_lifted_weights(asnet: ASNet) -> Dict[str, np.array]:
     """Returns a dictionary of pooled weights of the trained ASNet indexed
     by name of Action/Proposition.
 
@@ -86,18 +95,13 @@ def get_lifted_weights(asnet: ASNet, pooling: str='max') -> Dict[str, np.array]:
     from are lifted, meaning it won't be differentiated, in the returned values,
     if a weight came from the proposition ('clear', 'a') or ('clear', 'b').
 
-    Traditionally, weights of all objects with the same lifted name would be
-    the same in an ASNet, but this function takes in consideration the
-    possibility of them being different, and pools such weights according to the
-    specified pooling method.
+    Weights of all objects with the same lifted name are expected to be
+    the same in an ASNet.
 
     Parameters
     ----------
     asnet: ASNet
         ASNet instance from which the weights will be extracted from.
-    pooling: str, optional
-        Pooling method to aggregate weights from objects with equal LIFTED names.
-        Accepts 'max' and 'mean'/'avg'. Default is 'max'.
     
     Returns
     -------
@@ -111,24 +115,12 @@ def get_lifted_weights(asnet: ASNet, pooling: str='max') -> Dict[str, np.array]:
     # Lifts actions and propositions and appends all found weights for pooling
     for layer_name, weights_and_biases in grounded_weights:
         lifted_name: str = get_lifted_name(layer_name)
-        
-        if lifted_name in lifted_weights:
-            # If lifted object was already seen before, appends its weights for future pooling
-            lifted_weights[lifted_name].append(weights_and_biases)
-        else:
-            lifted_weights[lifted_name] = [weights_and_biases]
+
+        if lifted_name not in lifted_weights:
+            # We only need to add weights of lifted objects never seen before.
+            # All ground objects share the same weights with all other objects grounded from the same lifted object.
+            lifted_weights[lifted_name] = weights_and_biases
     
-    # Pools grounded actions' and propositions' weights into singular weight
-    # values for the lifted actions and propositions
-    for key, weights_and_biases in lifted_weights.items():
-        weights = np.array([val[0] for val in weights_and_biases])
-        biases = np.array([val[1] for val in weights_and_biases])
-        if pooling == 'max':
-            lifted_weights[key] = (np.max(weights, axis=0), np.max(biases, axis=0))
-        elif pooling == 'mean' or pooling == 'avg':
-            lifted_weights[key] = (np.mean(weights, axis=0), np.mean(biases, axis=0))
-        else:
-            raise("Unkown pooling method in get_lifted_weights()!")
     return lifted_weights
 
 
@@ -152,3 +144,19 @@ def set_lifted_weights(asnet: ASNet, lifted_weights: Dict[str, np.array]) -> Non
         if lifted_name in lifted_weights:
             weights_and_biases = lifted_weights[lifted_name]
             layer.set_weights(weights_and_biases)
+
+
+def save_lifted_weights_to_file(weights: Dict[str, np.array], file_path: str) -> None:
+    with open(file_path, 'w') as f:
+        json.dump(weights, f, cls=NumpyEncoder)
+
+
+def read_lifted_weights_from_file(file_path: str) -> Dict[str, np.array]:
+    weights: dict = {}
+    with open(file_path, 'r') as f:
+        file_weights: dict = json.load(f)
+        for key, value in file_weights.items():
+            output_weights = np.array(value[0])
+            bias = np.array(value[1])
+            weights[key] = (output_weights, bias)
+    return weights

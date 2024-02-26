@@ -4,9 +4,9 @@ import time
 import os
 
 from .training_helper import TrainingHelper
+from .weight_transfer import NumpyEncoder
 
 import click
-import numpy as np
 from tqdm import tqdm
 from keras.callbacks import EarlyStopping
 
@@ -121,9 +121,7 @@ class Trainer:
 
 
     def save_intermediary_weights(self, iteration: int, save_path: str):
-        if iteration > 0 and iteration % 10 == 0: # Saves intermediary results each 10 iterations of training
-            with open(f'{save_path}/iter{iteration}.json', 'w') as f:
-                json.dump(self.helpers[-1].get_model_weights(), f, cls=NumpyEncoder)
+        self.helpers[-1].save_model_weights_to_file(f'{save_path}/iter{iteration}.json')
     
 
     def train_with_exploration(self, exploration_loops: int = 550, train_epochs: int = 100, verbose: int = 0, save_path: str='/data/models') -> list:
@@ -154,7 +152,7 @@ class Trainer:
                     histories[i].append(history)
 
                 self.info["training_iterations"] = iter
-                if iter % 10 == 0:
+                if iter > 0 and iter % 10 == 0:
                     self.save_intermediary_weights(iter, save_path)
                 # Custom Early Stopping
                 self.update_helpers_weights()
@@ -205,7 +203,7 @@ class Trainer:
                     histories[i].append(history)
 
                 self.info["training_iterations"] = iter
-                if iter % 10 == 0:
+                if iter > 0 and iter % 10 == 0:
                     self.save_intermediary_weights(iter, save_path)
                 # Custom Early Stopping
                 self.update_helpers_weights()
@@ -262,16 +260,8 @@ class Trainer:
         toc = time.process_time()
         self.info["training_time"] = toc-tic
         
-        self.update_helpers_weights()
-        shared_weights = self.helpers[0].get_model_weights()
+        shared_weights = self.helpers[-1].get_model_weights()
         return histories, shared_weights
-
-
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
 
 
 def train(domain, problems, valid: str='', layers: int=2, policy_exploration: bool=False, save: str='', verbose: int=0):
