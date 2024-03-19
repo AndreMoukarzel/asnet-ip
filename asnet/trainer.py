@@ -132,7 +132,8 @@ class Trainer:
 
         self.info['starting_iteration'] = self.get_starting_iteration(save_path)
         if self.info['starting_iteration'] > 0:
-            self.helpers[0].set_model_weights_from_file(f"{save_path}/iter{self.info['starting_iteration'] - 1}.json")
+            for helper in self.helpers:
+                helper.set_model_weights_from_file(f"{save_path}/iter{self.info['starting_iteration'] - 1}.json")
 
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)
@@ -178,7 +179,8 @@ class Trainer:
 
         self.info['starting_iteration'] = self.get_starting_iteration(save_path)
         if self.info['starting_iteration'] > 0:
-            self.helpers[0].set_model_weights_from_file(f"{save_path}/iter{self.info['starting_iteration'] - 1}.json")
+            for helper in self.helpers:
+                helper.set_model_weights_from_file(f"{save_path}/iter{self.info['starting_iteration'] - 1}.json")
 
         consecutive_solved: int = 0 # Number the problems were successfully solved consecutively
         histories: list = [[]] * len(self.helpers)

@@ -8,7 +8,6 @@ shareable weights.
 import time
 import logging
 from typing import List, Dict, Tuple, Set
-import itertools
 
 from ippddl_parser.parser import Parser
 from tensorflow import keras
@@ -16,7 +15,7 @@ from keras.layers import Input, Dense, Concatenate
 from keras.models import Model
 import click
 
-from .custom_layers import Output, ActionModule, PropositionModule, AltPropositionModule
+from .custom_layers import Output, ActionModule, PropositionModule
 from .relations import get_related_propositions
 from .sysadmin.auxiliary import get_connections
 
