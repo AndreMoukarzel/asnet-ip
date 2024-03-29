@@ -2,6 +2,7 @@ asnet/*.jpg
 data/*.json
 data/*/*.json
 info/*.json
+results/*.json
 
 # Ignore problem instances, but not the domain definitions and generation scripts
 problems/*/*.pddl
